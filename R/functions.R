@@ -193,10 +193,8 @@ docker_run_mfcl <- function(
   # Helper function to convert Windows paths to Docker-compatible paths
   convert_path_for_docker <- function(path) {
     if (.Platform$OS.type == "windows") {
-      # Normalize the Windows path
+      # Normalize the Windows path to use forward slashes
       path <- normalizePath(path, winslash = "/")
-      # Replace invalid characters (e.g., backslashes)
-      path <- gsub("\\\\", "/", path)
     }
     return(path)
   }
@@ -217,11 +215,9 @@ docker_run_mfcl <- function(
   # Normalize and validate each subdirectory (Windows-specific handling)
   sub_dirs <- lapply(sub_dirs, function(sub_dir) {
     sub_dir_path <- if (sub_dir != "") file.path(project_dir, sub_dir) else project_dir
-    if (.Platform$OS.type == "windows") {
-      sub_dir_path <- normalizePath(sub_dir_path, winslash = "/", mustWork = FALSE)
-    }
+    sub_dir_path <- convert_path_for_docker(sub_dir_path)
     
-    if (!dir.exists(sub_dir_path)) {
+    if (!dir.exists(normalizePath(sub_dir_path, winslash = "/", mustWork = FALSE))) {
       stop("The specified sub-directory does not exist: ", sub_dir_path)
     }
     return(sub_dir_path)
@@ -276,6 +272,7 @@ docker_run_mfcl <- function(
   
   return(results)
 }
+
 
 #' Create a Dockerfile with custom options
 #' 
