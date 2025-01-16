@@ -193,10 +193,10 @@ docker_run_mfcl <- function(
   # Helper function to convert Windows paths to Docker-compatible paths
   convert_path_for_docker <- function(path) {
     if (.Platform$OS.type == "windows") {
-      # Normalize the Windows path and ensure single backslashes
-      path <- normalizePath(path, winslash = "\\")
-      # Replace backslashes with single backslashes for Docker compatibility
-      path <- gsub("\\\\", "\\", path)
+      # Normalize the Windows path
+      path <- normalizePath(path, winslash = "/")
+      # Replace invalid characters (e.g., backslashes)
+      path <- gsub("\\\\", "/", path)
     }
     return(path)
   }
@@ -206,13 +206,26 @@ docker_run_mfcl <- function(
     stop("The project directory does not exist: ", project_dir)
   }
   
-  # Convert the project directory to a Windows-compatible path if on Windows
+  # Convert the project directory to a Docker-compatible path
   project_dir <- convert_path_for_docker(project_dir)
   
   # If no subdirectories are provided, assume the base project directory
   if (is.null(sub_dirs)) {
     sub_dirs <- list("")
   }
+  
+  # Normalize and validate each subdirectory (Windows-specific handling)
+  sub_dirs <- lapply(sub_dirs, function(sub_dir) {
+    sub_dir_path <- if (sub_dir != "") file.path(project_dir, sub_dir) else project_dir
+    if (.Platform$OS.type == "windows") {
+      sub_dir_path <- normalizePath(sub_dir_path, winslash = "/", mustWork = FALSE)
+    }
+    
+    if (!dir.exists(sub_dir_path)) {
+      stop("The specified sub-directory does not exist: ", sub_dir_path)
+    }
+    return(sub_dir_path)
+  })
   
   # If commands is a single string, replicate it for all sub_dirs
   if (length(commands) == 1) {
@@ -226,25 +239,10 @@ docker_run_mfcl <- function(
   
   # Function to run Docker for a single subdirectory and command
   run_docker_for_subdir <- function(sub_dir, command) {
-    # Combine project directory with the subdirectory
-    if (sub_dir != "") {
-      sub_dir_path <- file.path(project_dir, sub_dir)
-    } else {
-      sub_dir_path <- project_dir
-    }
-    
-    # Check if the combined directory exists
-    if (!dir.exists(sub_dir_path)) {
-      stop("The specified sub-directory does not exist: ", sub_dir_path)
-    }
-    
-    # Normalize the subdirectory path
-    sub_dir_path <- convert_path_for_docker(sub_dir_path)
-    
     # Construct the Docker command
     docker_command <- sprintf(
       "docker run --rm -v %s:%s -w %s %s %s",
-      sub_dir_path, sub_dir_path, sub_dir_path, image_name, command
+      sub_dir, sub_dir, sub_dir, image_name, command
     )
     
     # Print the command for debugging if verbose is enabled
