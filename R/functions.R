@@ -193,10 +193,10 @@ docker_run_mfcl <- function(
   # Helper function to convert Windows paths to Docker-compatible paths
   convert_path_for_docker <- function(path) {
     if (.Platform$OS.type == "windows") {
-      # Normalize the Windows path
+      # Normalize the Windows path and ensure single backslashes
       path <- normalizePath(path, winslash = "\\")
-      # Convert drive letter (e.g., C:) to C:/
-      path <- gsub("^([A-Za-z]):", "\\1:", path)
+      # Replace backslashes with single backslashes for Docker compatibility
+      path <- gsub("\\\\", "\\", path)
     }
     return(path)
   }
