@@ -190,10 +190,25 @@ docker_run_mfcl <- function(
     cores = parallel::detectCores() - 1, # Number of cores to use for parallel execution
     verbose = TRUE         # Whether to print the executed commands
 ) {
+  # Helper function to convert Windows paths to Docker-compatible paths
+  convert_path_for_docker <- function(path) {
+    if (.Platform$OS.type == "windows") {
+      # Normalize the Windows path
+      path <- normalizePath(path, winslash = "/")
+      # Convert drive letter (e.g., C:) to /mnt/c
+      path <- gsub("^([A-Za-z]):", "/mnt/\\1", path)
+      path <- tolower(path) # Convert drive letter to lowercase
+    }
+    return(path)
+  }
+  
   # Check if the project directory exists
   if (!dir.exists(project_dir)) {
     stop("The project directory does not exist: ", project_dir)
   }
+  
+  # Convert the project directory to a Docker-compatible path
+  project_dir <- convert_path_for_docker(project_dir)
   
   # If no subdirectories are provided, assume the base project directory
   if (is.null(sub_dirs)) {
@@ -210,9 +225,6 @@ docker_run_mfcl <- function(
     stop("The length of 'commands' must match the length of 'sub_dirs'.")
   }
   
-  # Normalize the project directory path
-  project_dir <- normalizePath(project_dir)
-  
   # Function to run Docker for a single subdirectory and command
   run_docker_for_subdir <- function(sub_dir, command) {
     # Combine project directory with the subdirectory
@@ -227,16 +239,13 @@ docker_run_mfcl <- function(
       stop("The specified sub-directory does not exist: ", sub_dir_path)
     }
     
-    # Normalize the subdirectory path
-    sub_dir_path <- normalizePath(sub_dir_path)
-    
-    # Set the container's mount path to be the same as the host path
-    container_path <- sub_dir_path
+    # Convert the subdirectory path to Docker-compatible format
+    sub_dir_path <- convert_path_for_docker(sub_dir_path)
     
     # Construct the Docker command
     docker_command <- sprintf(
       "docker run --rm -v %s:%s -w %s %s %s",
-      sub_dir_path, container_path, container_path, image_name, command
+      sub_dir_path, sub_dir_path, sub_dir_path, image_name, command
     )
     
     # Print the command for debugging if verbose is enabled
@@ -439,5 +448,3 @@ docker_push <- function(local_image, remote_image, username, tag = "latest") {
   cat(sprintf("Pushing image: %s to Docker Hub\n", full_remote_image))
   system(sprintf("docker push %s", full_remote_image))
 }
-
-
