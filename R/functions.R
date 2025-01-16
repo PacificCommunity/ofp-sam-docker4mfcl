@@ -194,10 +194,9 @@ docker_run_mfcl <- function(
   convert_path_for_docker <- function(path) {
     if (.Platform$OS.type == "windows") {
       # Normalize the Windows path
-      path <- normalizePath(path, winslash = "/")
-      # Convert drive letter (e.g., C:) to /mnt/c
-      path <- gsub("^([A-Za-z]):", "/mnt/\\1", path)
-      path <- tolower(path) # Convert drive letter to lowercase
+      path <- normalizePath(path, winslash = "\\")
+      # Convert drive letter (e.g., C:) to C:/
+      path <- gsub("^([A-Za-z]):", "\\1:", path)
     }
     return(path)
   }
@@ -207,7 +206,7 @@ docker_run_mfcl <- function(
     stop("The project directory does not exist: ", project_dir)
   }
   
-  # Convert the project directory to a Docker-compatible path
+  # Convert the project directory to a Windows-compatible path if on Windows
   project_dir <- convert_path_for_docker(project_dir)
   
   # If no subdirectories are provided, assume the base project directory
@@ -239,7 +238,7 @@ docker_run_mfcl <- function(
       stop("The specified sub-directory does not exist: ", sub_dir_path)
     }
     
-    # Convert the subdirectory path to Docker-compatible format
+    # Normalize the subdirectory path
     sub_dir_path <- convert_path_for_docker(sub_dir_path)
     
     # Construct the Docker command
