@@ -4,8 +4,8 @@ FROM ubuntu:22.04
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive \
-    R_VERSION=4.3.0 \
-    R_PACKAGES="ggplot2 dplyr tidyverse remotes" \
+    R_VERSION=4.2.3 \
+    R_PACKAGES="ggplot2 dplyr tidyverse iterators remotes TMB" \
     FLR_REPO="http://flr-project.org/R"
 
 # Install system dependencies
@@ -38,10 +38,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pandoc-citeproc && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Set timezone (optional if tzdata prompts for configuration)
-ENV TZ=Etc/UTC
-
-
 # Install R
 RUN wget https://cloud.r-project.org/src/base/R-4/R-${R_VERSION}.tar.gz && \
     tar -xvzf R-${R_VERSION}.tar.gz && \
@@ -59,7 +55,7 @@ RUN Rscript -e "install.packages(unlist(strsplit(Sys.getenv('R_PACKAGES'), ' '))
 RUN Rscript -e "install.packages('FLCore', repos=Sys.getenv('FLR_REPO'))"
 
 # Install GitHub packages
-RUN Rscript -e "remotes::install_github('rstudio/shiny') && remotes::install_github('tidyverse/dplyr')"
+RUN Rscript -e "remotes::install_github('PacificCommunity/ofp-sam-flr4mfcl'); remotes::install_github('rstudio/shiny'); remotes::install_github('rstudio/tensorflow')"
 
 # Set working directory inside the container
 WORKDIR /workspace
