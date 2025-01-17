@@ -178,6 +178,7 @@ docker_prune <- function() {
 #' @param parallel Whether to enable parallel execution. Defaults to FALSE.
 #' @param cores The number of cores to use for parallel execution. Defaults to all available cores minus one.
 #' @param verbose Whether to print the executed commands. Defaults to TRUE.
+#' @param log_file The log file to save the output. Defaults to NULL (no log file).
 #' @return A list of results from the executed commands.
 #' @examples
 #' docker_run_mfcl(image_name = "mfcl_image", commands = "./mfclo64 input_file.frq")
@@ -188,7 +189,8 @@ docker_run_mfcl <- function(
     sub_dirs = NULL,       # List of subdirectories for execution
     parallel = FALSE,      # Enable parallel execution
     cores = parallel::detectCores() - 1, # Number of cores for parallel execution
-    verbose = TRUE         # Print command details
+    verbose = TRUE,         # Print command details
+    log_file=NULL          # Log file to save output
 ) {
   # Path conversion for Docker (Windows and non-Windows)
   convert_path_for_docker <- function(path) {
@@ -250,18 +252,26 @@ docker_run_mfcl <- function(
   # Run commands sequentially or in parallel
   run_commands <- function(docker_cmds) {
     total_cmds <- length(docker_cmds)
-    pb <- txtProgressBar(min = 0, max = total_cmds, style = 3) # Create a progress bar
+    pb <- utils::txtProgressBar(min = 0, max = total_cmds, style = 3) # Progress bar
     
     capture_output <- function(cmd, index) {
+      # Determine the null device based on the operating system
+      null_device <- if (.Platform$OS.type == "windows") "NUL" else "/dev/null"
+      
+      # Redirect output and error streams to suppress messages
       result <- tryCatch({
-        system(cmd, intern = TRUE)
+        if (is.null(log_file)) {
+          # Suppress all output
+          system(paste(cmd, ">", null_device, "2>&1"), intern = TRUE)
+        } else {
+          # Redirect output to log file
+          system(paste(cmd, ">>", shQuote(log_file), "2>&1"), intern = TRUE)
+        }
       }, error = function(e) {
         return(paste("Error:", e$message))
       })
-      if (!is.null(log_file)) {
-        writeLines(result, log_file, append = TRUE)
-      }
-      setTxtProgressBar(pb, index) # Update progress bar
+      
+      utils::setTxtProgressBar(pb, index) # Update progress bar
       return(result)
     }
     
@@ -289,7 +299,7 @@ docker_run_mfcl <- function(
       }
     }
     
-    close(pb) # Close the progress bar
+    close(pb) # Close progress bar
     return(results)
   }
   
