@@ -217,14 +217,16 @@ docker_run_mfcl <- function(
   # Normalize and validate each subdirectory
   sub_dirs <- lapply(sub_dirs, function(sub_dir) {
     # Combine project directory with subdirectory if relative
-    sub_dir_path <- if (!grepl("^/", sub_dir)) {
+    sub_dir_path <- if (!grepl("^([A-Za-z]:|/mnt/|\\\\|/)", sub_dir)) {
       file.path(project_dir, sub_dir)
     } else {
       sub_dir
     }
     
-    # Convert to Docker-compatible format
-    sub_dir_path <- convert_path_for_docker(sub_dir_path)
+    # Convert to Docker-compatible format only once
+    if (!grepl("^/mnt/", sub_dir_path) && .Platform$OS.type == "windows") {
+      sub_dir_path <- convert_path_for_docker(sub_dir_path)
+    }
     
     # Ensure the directory exists
     if (!dir.exists(normalizePath(sub_dir_path, mustWork = FALSE))) {
@@ -235,6 +237,7 @@ docker_run_mfcl <- function(
   })
   
   # If commands is a single string, replicate it for all sub_dirs
+  
   if (length(commands) == 1) {
     commands <- rep(commands, length(sub_dirs))
   }
