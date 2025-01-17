@@ -244,24 +244,21 @@ docker_run_mfcl <- function(
     sub_dir_path_docker <- convert_path_for_docker(sub_dir_path)
     
     if (.Platform$OS.type == "windows") {
-      # Create a temporary container, copy files, and execute commands
-      container_name <- sprintf("temp_container_%s", sub_dir)
+      # Use docker cp for Windows optimisation
+      container_name <- sprintf("temp_container_%s", gsub("[^A-Za-z0-9]", "_", sub_dir))
       create_cmd <- sprintf("docker create --name %s %s", container_name, image_name)
       setup_cmd <- sprintf("docker cp %s/. %s:/workdir", shQuote(sub_dir_path), container_name)
-      start_cmd <- sprintf("docker start %s", container_name)
-      exec_cmd <- sprintf("docker exec %s %s", container_name, command)
+      exec_cmd <- sprintf("docker start %s && docker exec %s %s", container_name, container_name, command)
       cleanup_cmd <- sprintf("docker rm -f %s", container_name)
-      
       list(
         create = create_cmd,
         setup = setup_cmd,
-        start = start_cmd,
-        command = exec_cmd,
+        execute = exec_cmd,
         cleanup = cleanup_cmd,
         sub_dir = sub_dir_path
       )
     } else {
-      # Fallback to -v mount for non-Windows systems
+      # Use volume mount for non-Windows systems
       list(
         command = sprintf(
           "docker run --rm -v %s:%s -w %s %s %s",
@@ -276,69 +273,73 @@ docker_run_mfcl <- function(
   if (verbose) {
     cat("Executing the following Docker commands:\n")
     for (cmd in docker_commands) {
-      cat(cmd$command, "\n")
+      if (.Platform$OS.type == "windows") {
+        cat("Create Command:\n", cmd$create, "\n")
+        cat("Setup Command:\n", cmd$setup, "\n")
+        cat("Execute Command:\n", cmd$execute, "\n")
+        cat("Cleanup Command:\n", cmd$cleanup, "\n")
+      } else {
+        cat(cmd$command, "\n")
+      }
     }
   }
   
   # Run commands sequentially or in parallel
   run_commands <- function(docker_cmds) {
-    total_cmds <- length(docker_cmds)
+    pb <- utils::txtProgressBar(min = 0, max = length(docker_cmds), style = 3)
     
     capture_output <- function(cmd_info, index) {
-      cmd <- cmd_info$command
-      sub_dir <- cmd_info$sub_dir
-      
-      # Redirect output to log file if verbose is FALSE
-      if (!verbose) {
-        cmd <- sprintf("%s >> %s 2>&1", cmd, shQuote(log_file))
+      if (.Platform$OS.type == "windows") {
+        # Sequentially run the commands for Windows
+        system(cmd_info$create, intern = TRUE)
+        system(cmd_info$setup, intern = TRUE)
+        result <- tryCatch({
+          output <- system(cmd_info$execute, intern = TRUE)
+          system(cmd_info$cleanup, intern = TRUE)
+          utils::setTxtProgressBar(pb, index)
+          output
+        }, error = function(e) {
+          system(cmd_info$cleanup, intern = TRUE)
+          utils::setTxtProgressBar(pb, index)
+          paste("Error:", e$message)
+        })
+      } else {
+        # Standard command execution for non-Windows
+        cmd <- cmd_info$command
+        result <- tryCatch({
+          output <- system(cmd, intern = TRUE)
+          utils::setTxtProgressBar(pb, index)
+          output
+        }, error = function(e) {
+          utils::setTxtProgressBar(pb, index)
+          paste("Error:", e$message)
+        })
       }
       
-      # Capture output and error streams
-      result <- tryCatch({
-        output <- system(cmd, intern = TRUE)
-        list(output = output, error = NULL)
-      }, error = function(e) {
-        list(output = NULL, error = e$message)
-      })
-      
-      # Return detailed result
       return(list(
-        command = cmd,
-        sub_dir = sub_dir,
-        index = index,
-        output = result$output,
-        error = result$error
+        command = if (.Platform$OS.type == "windows") cmd_info$execute else cmd_info$command,
+        sub_dir = cmd_info$sub_dir,
+        output = result
       ))
     }
     
-    if (.Platform$OS.type == "windows") {
-      if (parallel) {
-        cl <- parallel::makeCluster(cores)
-        on.exit(parallel::stopCluster(cl))
-        results <- parallel::parLapply(cl, seq_along(docker_cmds), function(i) {
-          capture_output(docker_cmds[[i]], i)
-        })
-      } else {
-        results <- lapply(seq_along(docker_cmds), function(i) {
-          capture_output(docker_cmds[[i]], i)
-        })
-      }
+    if (parallel) {
+      cl <- parallel::makeCluster(cores)
+      on.exit(parallel::stopCluster(cl))
+      results <- parallel::parLapply(cl, seq_along(docker_cmds), function(i) {
+        capture_output(docker_cmds[[i]], i)
+      })
     } else {
-      if (parallel) {
-        results <- parallel::mclapply(seq_along(docker_cmds), function(i) {
-          capture_output(docker_cmds[[i]], i)
-        }, mc.cores = cores)
-      } else {
-        results <- lapply(seq_along(docker_cmds), function(i) {
-          capture_output(docker_cmds[[i]], i)
-        })
-      }
+      results <- lapply(seq_along(docker_cmds), function(i) {
+        capture_output(docker_cmds[[i]], i)
+      })
     }
     
+    close(pb)
     return(results)
   }
   
-  # Execute and return results
+  # Execute commands
   results <- run_commands(docker_commands)
   return(results)
 }
