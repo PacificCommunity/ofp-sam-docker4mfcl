@@ -260,6 +260,84 @@ docker_run_mfcl <- function(
   }
   
   # Run commands sequentially or in parallel
+ docker_run_mfcl <- function(
+    image_name,            # Docker image name
+    commands,              # Commands to execute inside the container
+    project_dir = getwd(), # Base project directory (default: current working directory)
+    sub_dirs = NULL,       # List of subdirectories for execution
+    parallel = FALSE,      # Enable parallel execution
+    cores = parallel::detectCores() - 1, # Number of cores for parallel execution
+    verbose = TRUE,        # Print command details
+    log_file = NULL        # Log file to save command outputs when verbose = FALSE
+) {
+  # Path conversion for Docker (Windows and non-Windows)
+  convert_path_for_docker <- function(path) {
+    if (.Platform$OS.type == "windows") {
+      path <- normalizePath(path, winslash = "/")
+      path <- gsub("^([A-Za-z]):", "/mnt/\1", path, perl = TRUE)
+    } else {
+      path <- normalizePath(path)
+    }
+    return(path)
+  }
+
+  # Helper function for setting default value
+  `%||%` <- function(a, b) {
+    if (!is.null(a)) a else b
+  }
+
+  # Check if project directory exists
+  if (!dir.exists(project_dir)) {
+    stop("The project directory does not exist: ", project_dir)
+  }
+
+  # Set sub_dirs to root if not provided
+  sub_dirs <- sub_dirs %||% list("")
+
+  # Validate subdirectories
+  invalid_dirs <- vapply(sub_dirs, function(sub_dir) {
+    sub_dir_path <- if (sub_dir != "") file.path(project_dir, sub_dir) else project_dir
+    !dir.exists(sub_dir_path)
+  }, logical(1))
+
+  if (any(invalid_dirs)) {
+    stop("The following subdirectories do not exist: ", paste(sub_dirs[invalid_dirs], collapse = ", "))
+  }
+
+  # Adjust commands length if necessary
+  if (length(commands) == 1) {
+    commands <- rep(commands, length(sub_dirs))
+  } else if (length(commands) != length(sub_dirs)) {
+    stop("The length of 'commands' must match the length of 'sub_dirs'.")
+  }
+
+  # Set default log file if verbose is FALSE and no log_file is provided
+  if (!verbose && is.null(log_file)) {
+    log_file <- file.path(project_dir, "mfcl_output.log")
+  }
+
+  # Pre-generate Docker commands
+  docker_commands <- mapply(function(sub_dir, command) {
+    sub_dir_path <- if (sub_dir != "") file.path(project_dir, sub_dir) else project_dir
+    sub_dir_path_docker <- convert_path_for_docker(sub_dir_path)
+    list(
+      command = sprintf(
+        "docker run --rm -v %s:%s -w %s %s %s",
+        shQuote(sub_dir_path), shQuote(sub_dir_path_docker), shQuote(sub_dir_path_docker), image_name, command
+      ),
+      sub_dir = sub_dir_path
+    )
+  }, sub_dirs, commands, SIMPLIFY = FALSE)
+
+  # Verbose output
+  if (verbose) {
+    cat("Executing the following Docker commands:\n")
+    for (cmd in docker_commands) {
+      cat(cmd$command, "\n")
+    }
+  }
+
+  # Run commands sequentially or in parallel
   run_commands <- function(docker_cmds) {
     total_cmds <- length(docker_cmds)
     pb <- utils::txtProgressBar(min = 0, max = total_cmds, style = 3) # Progress bar
@@ -285,13 +363,12 @@ docker_run_mfcl <- function(
       # Capture output and error streams
       result <- tryCatch({
         output <- system(cmd, intern = TRUE)
+        update_progress()
         output
       }, error = function(e) {
+        update_progress()
         paste("Error:", e$message)
       })
-      
-      # Update progress bar
-      update_progress()
       
       # Return detailed result
       return(list(
@@ -307,7 +384,8 @@ docker_run_mfcl <- function(
         cl <- parallel::makeCluster(cores)
         on.exit(parallel::stopCluster(cl))
         results <- parallel::parLapply(cl, seq_along(docker_cmds), function(i) {
-          capture_output(docker_cmds[[i]], i)
+          res <- capture_output(docker_cmds[[i]], i)
+          res
         })
       } else {
         results <- lapply(seq_along(docker_cmds), function(i) {
@@ -318,7 +396,6 @@ docker_run_mfcl <- function(
       if (parallel) {
         results <- parallel::mclapply(seq_along(docker_cmds), function(i) {
           res <- capture_output(docker_cmds[[i]], i)
-          update_progress()
           res
         }, mc.cores = cores)
       } else {
