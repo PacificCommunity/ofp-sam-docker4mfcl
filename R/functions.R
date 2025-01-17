@@ -216,24 +216,33 @@ docker_run_mfcl <- function(
   
   # Normalize and validate each subdirectory
   sub_dirs <- lapply(sub_dirs, function(sub_dir) {
-    # Combine project directory with subdirectory if relative
-    sub_dir_path <- if (!grepl("^([A-Za-z]:|/mnt/|\\\\|/)", sub_dir)) {
+    # 로컬 경로 확인을 위한 처리 (Windows 스타일 유지)
+    sub_dir_path_local <- if (!grepl("^([A-Za-z]:|\\\\|/)", sub_dir)) {
       file.path(project_dir, sub_dir)
     } else {
       sub_dir
     }
     
-    # Convert to Docker-compatible format only once
-    if (!grepl("^/mnt/", sub_dir_path) && .Platform$OS.type == "windows") {
-      sub_dir_path <- convert_path_for_docker(sub_dir_path)
+    if (.Platform$OS.type == "windows") {
+      sub_dir_path_local <- normalizePath(sub_dir_path_local, winslash = "\\", mustWork = FALSE)
     }
     
-    # Ensure the directory exists
-    if (!dir.exists(normalizePath(sub_dir_path, mustWork = FALSE))) {
-      stop("The specified sub-directory does not exist: ", sub_dir_path)
+    # 로컬에서 경로가 존재하는지 확인
+    if (!dir.exists(sub_dir_path_local)) {
+      stop("The specified sub-directory does not exist locally: ", sub_dir_path_local)
     }
     
-    return(sub_dir_path)
+    # Docker에 전달할 경로 변환 (Linux 스타일로 변환)
+    sub_dir_path_docker <- if (.Platform$OS.type == "windows") {
+      # Windows 경로를 Docker의 Linux 경로로 변환
+      normalizePath(sub_dir_path_local, winslash = "/") %>%
+        gsub("^([A-Za-z]):", "/mnt/\\L\\1", ., perl = TRUE)
+    } else {
+      sub_dir_path_local
+    }
+    
+    # Docker에서 사용할 경로 반환
+    return(sub_dir_path_docker)
   })
   
   # If commands is a single string, replicate it for all sub_dirs
