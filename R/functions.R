@@ -548,10 +548,9 @@ docker_run_mfcl2 <- function(
   }
   
   # ------------------------------------------------------------------
-  # 2) Non-Windows approach: volume mount
+  # 2) Linux/macOS approach: volume mount (unchanged)
   # ------------------------------------------------------------------
   convert_path_for_docker <- function(path) {
-    # For Linux/macOS usage
     path <- normalizePath(path)
     return(path)
   }
@@ -589,13 +588,14 @@ docker_run_mfcl2 <- function(
   
   # ------------------------------------------------------------------
   # 3) Windows approach: short local path + copy approach
+  #
+  #    => Creates one container per subdirectory, then removes it.
   # ------------------------------------------------------------------
   run_single_subdir_copy_win <- function(sd, cmd) {
     sd_path <- if (nzchar(sd)) file.path(project_dir, sd) else project_dir
     
-    # 3a) Create a short local base (customise if you prefer a different drive):
-    #     e.g., "C:/mfcl_temp"
-    short_base <- "C:/mfcl_temp"  # Adjust if you need a different location
+    # 3a) Create a short local base
+    short_base <- "C:/mfcl_temp"
     if (!dir.exists(short_base)) {
       dir.create(short_base, showWarnings = FALSE, recursive = TRUE)
     }
@@ -605,11 +605,7 @@ docker_run_mfcl2 <- function(
     dir.create(sub_temp, recursive = TRUE, showWarnings = FALSE)
     
     # 3c) Copy *contents* of the real sub_dir to sub_temp
-    #     We'll use R's file.copy() with recursive=TRUE
-    #     If you have many files, consider using a more efficient approach or robust copying.
     copy_in <- function(from, to) {
-      # from is a directory
-      # We want to copy everything in 'from' → 'to'
       files <- list.files(from, all.files = TRUE, full.names = TRUE, no.. = TRUE)
       if (length(files) > 0) {
         file.copy(files, to, recursive = TRUE)
@@ -621,6 +617,7 @@ docker_run_mfcl2 <- function(
     container_name <- paste0("mfcl_sub_", as.integer(Sys.time()), "_", sample(1000:9999, 1))
     run_cmd <- sprintf("docker run -d --name %s %s tail -f /dev/null", container_name, image_name)
     if (verbose) cat("[Start container] ", run_cmd, "\n")
+    
     container_id <- tryCatch({
       system(run_cmd, intern = TRUE)
     }, error = function(e) e$message)
@@ -641,6 +638,7 @@ docker_run_mfcl2 <- function(
       exec_cmd <- sprintf('docker exec %s sh -c "cd /jobs && %s"', container_name, cmd)
     }
     if (verbose) cat("[Exec cmd] ", exec_cmd, "\n")
+    
     result <- tryCatch({
       system(exec_cmd, intern = TRUE)
     }, error = function(e) e$message)
@@ -653,7 +651,7 @@ docker_run_mfcl2 <- function(
     if (verbose) cat("[Copy from container] ", copy_out_cmd, "\n")
     system(copy_out_cmd, intern = FALSE)
     
-    # 3h) Remove container
+    # 3h) Remove the container right away
     remove_cmd <- sprintf("docker rm -f %s", container_name)
     if (verbose) cat("[Remove container] ", remove_cmd, "\n\n")
     system(remove_cmd, intern = FALSE)
@@ -673,7 +671,6 @@ docker_run_mfcl2 <- function(
     # 3k) Clean up short local folder
     unlink(sub_temp, recursive = TRUE, force = TRUE)
     
-    # Return
     list(
       sub_dir = sd,
       command = cmd,
@@ -691,7 +688,7 @@ docker_run_mfcl2 <- function(
       cmd <- commands[[i]]
       
       if (.Platform$OS.type == "windows") {
-        # Use the short-path approach
+        # Use the short-path approach (one container per subdir)
         run_single_subdir_copy_win(sd, cmd)
       } else {
         # Use volume mount
@@ -701,6 +698,7 @@ docker_run_mfcl2 <- function(
     
     if (parallel) {
       if (.Platform$OS.type == "windows") {
+        # In Windows, multiple containers run in parallel
         cl <- parallel::makeCluster(cores)
         on.exit(parallel::stopCluster(cl))
         results <- parallel::parLapply(cl, seq_along(sub_dirs), do_one)
@@ -717,15 +715,17 @@ docker_run_mfcl2 <- function(
   # 5) Verbose summary
   # ------------------------------------------------------------------
   if (verbose) {
-    cat("docker_run_mfcl: Executing commands in subdirectories.\n")
+    cat("docker_run_mfcl2: Executing commands in subdirectories.\n")
     for (i in seq_along(sub_dirs)) {
       cat(sprintf("  Subdirectory: %s\n", sub_dirs[[i]]))
       cat(sprintf("  Command:      %s\n\n", commands[[i]]))
     }
     if (.Platform$OS.type == "windows") {
-      cat("  => Windows: using a short local path (C:/mfcl_temp) to avoid file-name-too-long.\n\n")
+      cat("  => Windows: using separate containers per subdirectory.\n",
+          "     (Short local path 'C:/mfcl_temp' to avoid path-too-long.)\n",
+          "     Container is removed immediately after each subdirectory.\n\n")
     } else {
-      cat("  => Linux/macOS: volume mount approach.\n\n")
+      cat("  => Linux/macOS: volume mount approach (docker run --rm).\n\n")
     }
   }
   
@@ -735,3 +735,4 @@ docker_run_mfcl2 <- function(
   results <- run_commands()
   return(results)
 }
+
