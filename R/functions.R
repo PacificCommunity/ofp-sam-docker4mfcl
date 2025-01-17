@@ -254,7 +254,7 @@ docker_run_mfcl <- function(
     total_cmds <- length(docker_cmds)
     pb <- utils::txtProgressBar(min = 0, max = total_cmds, style = 3) # Progress bar
     
-    capture_output <- function(cmd, index) {
+    capture_output <- function(cmd, sub_dir, index) {
       # Determine the null device based on the operating system
       null_device <- if (.Platform$OS.type == "windows") "NUL" else "/dev/null"
       
@@ -276,8 +276,9 @@ docker_run_mfcl <- function(
       # Return detailed result
       return(list(
         command = cmd,
+        sub_dir = sub_dir,
         index = index,
-        result = result
+        output = result
       ))
     }
     
@@ -286,21 +287,21 @@ docker_run_mfcl <- function(
         cl <- parallel::makeCluster(cores)
         on.exit(parallel::stopCluster(cl))
         results <- parallel::parLapply(cl, seq_along(docker_cmds), function(i) {
-          capture_output(docker_cmds[[i]], i)
+          capture_output(docker_cmds[[i]]$command, docker_cmds[[i]]$sub_dir, i)
         })
       } else {
         results <- lapply(seq_along(docker_cmds), function(i) {
-          capture_output(docker_cmds[[i]], i)
+          capture_output(docker_cmds[[i]]$command, docker_cmds[[i]]$sub_dir, i)
         })
       }
     } else {
       if (parallel) {
         results <- parallel::mclapply(seq_along(docker_cmds), function(i) {
-          capture_output(docker_cmds[[i]], i)
+          capture_output(docker_cmds[[i]]$command, docker_cmds[[i]]$sub_dir, i)
         }, mc.cores = cores)
       } else {
         results <- lapply(seq_along(docker_cmds), function(i) {
-          capture_output(docker_cmds[[i]], i)
+          capture_output(docker_cmds[[i]]$command, docker_cmds[[i]]$sub_dir, i)
         })
       }
     }
