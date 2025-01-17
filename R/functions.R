@@ -231,7 +231,7 @@ docker_run_mfcl <- function(
     # Normalize the final path for Windows
     if (.Platform$OS.type == "windows") {
       sub_dir_path <- normalizePath(sub_dir_path, winslash = "\\", mustWork = FALSE)
-      sub_dir_path <- gsub("\\\\+", "\\", sub_dir_path) # Ensure single backslashes
+      #sub_dir_path <- gsub("\\\\+", "\\", sub_dir_path) # Ensure single backslashes
     }
     
     # Check if the directory exists
