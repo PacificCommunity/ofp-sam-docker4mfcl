@@ -189,8 +189,8 @@ docker_run_mfcl <- function(
     sub_dirs = NULL,       # List of subdirectories for execution
     parallel = FALSE,      # Enable parallel execution
     cores = parallel::detectCores() - 1, # Number of cores for parallel execution
-    verbose = TRUE,         # Print command details
-    log_file=NULL          # Log file to save output
+    verbose = TRUE,        # Print command details
+    log_file = NULL        # Log file to save command outputs
 ) {
   # Path conversion for Docker (Windows and non-Windows)
   convert_path_for_docker <- function(path) {
@@ -237,16 +237,21 @@ docker_run_mfcl <- function(
   docker_commands <- mapply(function(sub_dir, command) {
     sub_dir_path <- if (sub_dir != "") file.path(project_dir, sub_dir) else project_dir
     sub_dir_path_docker <- convert_path_for_docker(sub_dir_path)
-    sprintf(
-      "docker run --rm -v %s:%s -w %s %s %s",
-      shQuote(sub_dir_path), shQuote(sub_dir_path_docker), shQuote(sub_dir_path_docker), image_name, command
+    list(
+      command = sprintf(
+        "docker run --rm -v %s:%s -w %s %s %s",
+        shQuote(sub_dir_path), shQuote(sub_dir_path_docker), shQuote(sub_dir_path_docker), image_name, command
+      ),
+      sub_dir = sub_dir_path
     )
   }, sub_dirs, commands, SIMPLIFY = FALSE)
   
   # Verbose output
   if (verbose) {
     cat("Executing the following Docker commands:\n")
-    cat(paste(docker_commands, collapse = "\n"), "\n")
+    for (cmd in docker_commands) {
+      cat(cmd$command, "\n")
+    }
   }
   
   # Run commands sequentially or in parallel
@@ -254,7 +259,9 @@ docker_run_mfcl <- function(
     total_cmds <- length(docker_cmds)
     pb <- utils::txtProgressBar(min = 0, max = total_cmds, style = 3) # Progress bar
     
-    capture_output <- function(cmd, sub_dir, index) {
+    capture_output <- function(cmd_info, index) {
+      cmd <- cmd_info$command
+      sub_dir <- cmd_info$sub_dir
       # Determine the null device based on the operating system
       null_device <- if (.Platform$OS.type == "windows") "NUL" else "/dev/null"
       
@@ -287,21 +294,21 @@ docker_run_mfcl <- function(
         cl <- parallel::makeCluster(cores)
         on.exit(parallel::stopCluster(cl))
         results <- parallel::parLapply(cl, seq_along(docker_cmds), function(i) {
-          capture_output(docker_cmds[[i]]$command, docker_cmds[[i]]$sub_dir, i)
+          capture_output(docker_cmds[[i]], i)
         })
       } else {
         results <- lapply(seq_along(docker_cmds), function(i) {
-          capture_output(docker_cmds[[i]]$command, docker_cmds[[i]]$sub_dir, i)
+          capture_output(docker_cmds[[i]], i)
         })
       }
     } else {
       if (parallel) {
         results <- parallel::mclapply(seq_along(docker_cmds), function(i) {
-          capture_output(docker_cmds[[i]]$command, docker_cmds[[i]]$sub_dir, i)
+          capture_output(docker_cmds[[i]], i)
         }, mc.cores = cores)
       } else {
         results <- lapply(seq_along(docker_cmds), function(i) {
-          capture_output(docker_cmds[[i]]$command, docker_cmds[[i]]$sub_dir, i)
+          capture_output(docker_cmds[[i]], i)
         })
       }
     }
