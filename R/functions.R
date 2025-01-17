@@ -190,11 +190,11 @@ docker_run_mfcl <- function(
     cores = parallel::detectCores() - 1, # Number of cores to use for parallel execution
     verbose = TRUE         # Whether to print the executed commands
 ) {
-  # Helper function to convert Windows paths to Docker-compatible paths
+  # Helper function to convert paths to Docker-compatible paths
   convert_path_for_docker <- function(path) {
     if (.Platform$OS.type == "windows") {
-      # Normalize the Windows path to use forward slashes
-      path <- normalizePath(path, winslash = "/")
+      # Normalize the Windows path and ensure backslashes for Windows
+      path <- normalizePath(path, winslash = "\\")
     }
     return(path)
   }
@@ -215,9 +215,11 @@ docker_run_mfcl <- function(
   # Normalize and validate each subdirectory (Windows-specific handling)
   sub_dirs <- lapply(sub_dirs, function(sub_dir) {
     sub_dir_path <- if (sub_dir != "") file.path(project_dir, sub_dir) else project_dir
-    sub_dir_path <- convert_path_for_docker(sub_dir_path)
+    if (.Platform$OS.type == "windows") {
+      sub_dir_path <- normalizePath(sub_dir_path, winslash = "\\", mustWork = FALSE)
+    }
     
-    if (!dir.exists(normalizePath(sub_dir_path, winslash = "/", mustWork = FALSE))) {
+    if (!dir.exists(sub_dir_path)) {
       stop("The specified sub-directory does not exist: ", sub_dir_path)
     }
     return(sub_dir_path)
