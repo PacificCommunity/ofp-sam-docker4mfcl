@@ -1,5 +1,4 @@
 export(docker_run_mfcl)
-export(docker_run_mfcl_windows)
 export(create_dockerfile)
 export(docker_build)
 export(docker_remove)
