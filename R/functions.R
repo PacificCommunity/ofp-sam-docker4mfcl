@@ -238,34 +238,24 @@ docker_run_mfcl <- function(
     log_file <- file.path(project_dir, "mfcl_output.log")
   }
   
-  # Pre-generate Docker commands
+  # Generate Docker commands
   docker_commands <- mapply(function(sub_dir, command) {
     sub_dir_path <- if (sub_dir != "") file.path(project_dir, sub_dir) else project_dir
-    sub_dir_path_docker <- convert_path_for_docker(sub_dir_path)
+    if (!dir.exists(sub_dir_path)) stop("Directory does not exist: ", sub_dir_path)
     
+    sub_dir_path_docker <- convert_path_for_docker(sub_dir_path)
     if (.Platform$OS.type == "windows") {
-      # Use docker cp for Windows optimisation
       container_name <- sprintf("temp_container_%s", gsub("[^A-Za-z0-9]", "_", sub_dir))
       create_cmd <- sprintf("docker create --name %s %s", container_name, image_name)
       setup_cmd <- sprintf("docker cp %s/. %s:/workdir", shQuote(sub_dir_path), container_name)
       exec_cmd <- sprintf("docker start %s && docker exec %s %s", container_name, container_name, command)
       cleanup_cmd <- sprintf("docker rm -f %s", container_name)
-      list(
-        create = create_cmd,
-        setup = setup_cmd,
-        execute = exec_cmd,
-        cleanup = cleanup_cmd,
-        sub_dir = sub_dir_path
-      )
+      list(create = create_cmd, setup = setup_cmd, execute = exec_cmd, cleanup = cleanup_cmd)
     } else {
-      # Use volume mount for non-Windows systems
-      list(
-        command = sprintf(
-          "docker run --rm -v %s:%s -w %s %s %s",
-          shQuote(sub_dir_path), shQuote(sub_dir_path_docker), shQuote(sub_dir_path_docker), image_name, command
-        ),
-        sub_dir = sub_dir_path
-      )
+      list(command = sprintf(
+        "docker run --rm -v %s:%s -w %s %s %s",
+        shQuote(sub_dir_path), shQuote(sub_dir_path_docker), shQuote(sub_dir_path_docker), image_name, command
+      ))
     }
   }, sub_dirs, commands, SIMPLIFY = FALSE)
   
@@ -284,60 +274,31 @@ docker_run_mfcl <- function(
     }
   }
   
-  # Run commands sequentially or in parallel
+  # Run commands
   run_commands <- function(docker_cmds) {
-    pb <- utils::txtProgressBar(min = 0, max = length(docker_cmds), style = 3)
-    
-    capture_output <- function(cmd_info, index) {
+    lapply(docker_cmds, function(cmd_info) {
       if (.Platform$OS.type == "windows") {
-        # Sequentially run the commands for Windows
         system(cmd_info$create, intern = TRUE)
         system(cmd_info$setup, intern = TRUE)
         result <- tryCatch({
           output <- system(cmd_info$execute, intern = TRUE)
           system(cmd_info$cleanup, intern = TRUE)
-          utils::setTxtProgressBar(pb, index)
           output
         }, error = function(e) {
           system(cmd_info$cleanup, intern = TRUE)
-          utils::setTxtProgressBar(pb, index)
           paste("Error:", e$message)
         })
       } else {
-        # Standard command execution for non-Windows
         cmd <- cmd_info$command
-        result <- tryCatch({
-          output <- system(cmd, intern = TRUE)
-          utils::setTxtProgressBar(pb, index)
-          output
-        }, error = function(e) {
-          utils::setTxtProgressBar(pb, index)
-          paste("Error:", e$message)
-        })
+        result <- tryCatch(system(cmd, intern = TRUE), error = function(e) paste("Error:", e$message))
       }
-      
-      return(list(
-        command = if (.Platform$OS.type == "windows") cmd_info$execute else cmd_info$command,
-        sub_dir = cmd_info$sub_dir,
-        output = result
-      ))
-    }
-    
-    if (parallel) {
-      cl <- parallel::makeCluster(cores)
-      on.exit(parallel::stopCluster(cl))
-      results <- parallel::parLapply(cl, seq_along(docker_cmds), function(i) {
-        capture_output(docker_cmds[[i]], i)
-      })
-    } else {
-      results <- lapply(seq_along(docker_cmds), function(i) {
-        capture_output(docker_cmds[[i]], i)
-      })
-    }
-    
-    close(pb)
-    return(results)
+      return(result)
+    })
   }
+  
+  results <- run_commands(docker_commands)
+  return(results)
+}
   
   # Execute commands
   results <- run_commands(docker_commands)
