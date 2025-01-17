@@ -478,23 +478,13 @@ docker_run_mfcl_windows <- function(
     cores = parallel::detectCores() - 1, # Number of cores for parallel execution
     verbose = TRUE         # Print command details
 ) {
-  # Check if Docker is available
-  check_docker <- function() {
-    tryCatch({
-      system("docker --version", intern = TRUE)
-    }, error = function(e) {
-      stop("Docker is not installed or not available in the system PATH.")
-    })
-  }
-  check_docker()
-  
-  # Normalize and convert paths for Docker
+  # Path conversion for Docker (Windows specific)
   convert_path_for_docker <- function(path) {
-    path <- normalizePath(path, winslash = "/")
-    gsub("^([A-Za-z]):", "/mnt/\\L\\1", path, perl = TRUE)
+    # Return Windows path as-is
+    return(normalizePath(path, winslash = "/"))
   }
   
-  # Validate the project directory
+  # Check if project directory exists
   if (!dir.exists(project_dir)) {
     stop("The project directory does not exist: ", project_dir)
   }
@@ -504,81 +494,66 @@ docker_run_mfcl_windows <- function(
     sub_dirs <- list("")
   }
   
-  # Replicate commands for sub_dirs if necessary
+  # Check each subdirectory
+  lapply(sub_dirs, function(sub_dir) {
+    sub_dir_path <- if (sub_dir != "") file.path(project_dir, sub_dir) else project_dir
+    if (!dir.exists(sub_dir_path)) {
+      stop("The sub-directory does not exist: ", sub_dir_path)
+    }
+  })
+  
+  # Ensure commands match the number of sub_dirs
   if (length(commands) == 1) {
     commands <- rep(commands, length(sub_dirs))
   }
-  
-  # Ensure commands and sub_dirs lengths match
   if (length(commands) != length(sub_dirs)) {
     stop("The length of 'commands' must match the length of 'sub_dirs'.")
   }
   
-  # Convert project directory for Docker
-  project_dir_docker <- convert_path_for_docker(project_dir)
-  
-  # Function to execute a Docker command for a single subdirectory
-  run_docker_for_subdir <- function(sub_dir, command) {
-    # Prepare paths
+  # Execute Docker command for each subdirectory
+  run_docker <- function(sub_dir, command) {
     sub_dir_path <- if (sub_dir != "") file.path(project_dir, sub_dir) else project_dir
-    if (!dir.exists(sub_dir_path)) {
-      stop("The specified sub-directory does not exist: ", sub_dir_path)
-    }
     sub_dir_path_docker <- convert_path_for_docker(sub_dir_path)
     
-    # Construct the Docker command for chmod
-    chmod_command <- sprintf(
-      "docker run --rm -v %s:%s -w %s %s chmod 700 mfclo64",
-      shQuote(sub_dir_path_docker), shQuote(sub_dir_path_docker), shQuote(sub_dir_path_docker), image_name
-    )
+    # Ensure the executable file has the correct permissions
+    chmod_command <- sprintf("chmod 700 %s/mfclo64", shQuote(sub_dir_path))
     if (verbose) {
-      cat("Setting execute permission for mfclo64 inside container:\n", chmod_command, "\n")
+      cat("Ensuring execute permission for mfclo64:
+", chmod_command, "\n")
     }
     system(chmod_command, intern = TRUE)
     
-    # Construct the Docker command
+    # Construct Docker command
     docker_command <- sprintf(
       "docker run --rm -v %s:%s -w %s %s %s",
       shQuote(sub_dir_path_docker), shQuote(sub_dir_path_docker), shQuote(sub_dir_path_docker), image_name, command
     )
+    
     if (verbose) {
-      cat("Running Docker command for subdirectory:", sub_dir, "\n", docker_command, "\n")
+      cat("Executing Docker command:
+", docker_command, "\n")
     }
     
-    # Execute the Docker command
+    # Run the command
     result <- tryCatch({
       system(docker_command, intern = TRUE)
     }, error = function(e) {
-      list(error = TRUE, message = e$message)
+      stop("Failed to execute Docker command:\n", docker_command, "\nError: ", e$message)
     })
     
-    # Return result
-    return(list(sub_dir = sub_dir, command = command, result = result))
+    return(result)
   }
   
-  # Execute commands in parallel or sequentially
+  # Execute commands sequentially or in parallel
   if (parallel) {
-    # Validate cores
-    if (cores < 1) {
-      stop("The number of cores must be at least 1.")
-    }
-    
-    # Create a cluster for parallel execution
     cl <- parallel::makeCluster(cores)
     on.exit(parallel::stopCluster(cl))
-    
-    # Export necessary variables and functions to the cluster
-    parallel::clusterExport(cl, varlist = c("run_docker_for_subdir", "sub_dirs", "commands", "project_dir", "verbose"), envir = environment())
-    
-    # Execute commands in parallel
     results <- parallel::parLapply(cl, seq_along(sub_dirs), function(i) {
-      run_docker_for_subdir(sub_dirs[[i]], commands[[i]])
+      run_docker(sub_dirs[[i]], commands[[i]])
     })
   } else {
-    # Sequential execution
-    results <- mapply(run_docker_for_subdir, sub_dirs, commands, SIMPLIFY = FALSE)
+    results <- mapply(run_docker, sub_dirs, commands, SIMPLIFY = FALSE)
   }
   
-  # Return the results
   return(results)
 }
