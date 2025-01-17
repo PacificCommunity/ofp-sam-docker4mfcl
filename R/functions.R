@@ -216,38 +216,38 @@ docker_run_mfcl <- function(
   
   # Normalize and validate each subdirectory
   sub_dirs <- lapply(sub_dirs, function(sub_dir) {
-    # Step 1: Determine the local path for validation
-    # If sub_dir is a relative path, combine it with the project directory
-    sub_dir_path_local <- if (!grepl("^([A-Za-z]:|\\\\|/)", sub_dir)) {
+    # Step 1: Determine the local path
+    # Combine project directory with sub_dir if it's a relative path
+    sub_dir_path_local <- if (!grepl("^([A-Za-z]:|\\\\|/|/mnt/)", sub_dir)) {
       file.path(project_dir, sub_dir)
     } else {
       sub_dir
     }
     
     # Step 2: Standardize the local path for Windows
-    # Normalize the path with backslashes for Windows (only if on Windows)
+    # Ensure local path uses backslashes for validation on Windows
     if (.Platform$OS.type == "windows") {
       sub_dir_path_local <- normalizePath(sub_dir_path_local, winslash = "\\", mustWork = FALSE)
     }
     
     # Step 3: Validate the local path
-    # Ensure the path exists locally; stop if it does not
+    # Check if the local path exists
     if (!dir.exists(sub_dir_path_local)) {
       stop("The specified sub-directory does not exist locally: ", sub_dir_path_local)
     }
     
-    # Step 4: Convert the local path to a Docker-compatible path
+    # Step 4: Convert to Docker-compatible path
     sub_dir_path_docker <- if (.Platform$OS.type == "windows") {
-      # Avoid redundant conversion if the path is already in Docker format (/mnt/)
+      # Avoid double conversion: Skip paths already in Docker format (/mnt/)
       if (grepl("^/mnt/", sub_dir_path_local)) {
         sub_dir_path_local
       } else {
-        # Convert Windows-style path (e.g., C:\\) to Docker's Linux format (/mnt/c/)
+        # Convert Windows-style path (C:\\) to Docker format (/mnt/c/)
         normalizePath(sub_dir_path_local, winslash = "/") %>%
           gsub("^([A-Za-z]):", "/mnt/\\L\\1", ., perl = TRUE)
       }
     } else {
-      # For non-Windows systems, use the local path as-is
+      # For non-Windows, use the local path as-is
       sub_dir_path_local
     }
     
