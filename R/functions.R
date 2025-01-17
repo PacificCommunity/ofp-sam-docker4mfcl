@@ -255,30 +255,35 @@ docker_run_mfcl <- function(
   }
   
   # Run commands sequentially or in parallel
+  # Run commands sequentially or in parallel
   run_commands <- function(docker_cmds) {
     total_cmds <- length(docker_cmds)
     pb <- utils::txtProgressBar(min = 0, max = total_cmds, style = 3) # Progress bar
+    progress_env <- new.env(parent = emptyenv())
+    progress_env$progress <- 0
     
     capture_output <- function(cmd_info, index) {
       cmd <- cmd_info$command
       sub_dir <- cmd_info$sub_dir
-      # Determine the null device based on the operating system
-      null_device <- if (.Platform$OS.type == "windows") "NUL" else "/dev/null"
       
-      # Redirect output and error streams to suppress messages
+      # Capture output and error streams
       result <- tryCatch({
-        if (is.null(log_file)) {
-          # Suppress all output
-          system(paste(cmd, ">", null_device, "2>&1"), intern = TRUE)
-        } else {
-          # Redirect output to log file
-          system(paste(cmd, ">>", shQuote(log_file), "2>&1"), intern = TRUE)
+        output <- system(cmd, intern = TRUE)
+        if (!is.null(log_file)) {
+          writeLines(output, log_file, append = TRUE)
         }
+        output
       }, error = function(e) {
-        return(paste("Error:", e$message))
+        error_msg <- paste("Error:", e$message)
+        if (!is.null(log_file)) {
+          writeLines(error_msg, log_file, append = TRUE)
+        }
+        return(error_msg)
       })
       
-      utils::setTxtProgressBar(pb, index) # Update progress bar
+      # Update progress bar in the main process
+      progress_env$progress <- progress_env$progress + 1
+      utils::setTxtProgressBar(pb, progress_env$progress)
       
       # Return detailed result
       return(list(
