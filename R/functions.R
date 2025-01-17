@@ -480,8 +480,10 @@ docker_run_mfcl_windows <- function(
 ) {
   # Path conversion for Docker (Windows specific)
   convert_path_for_docker <- function(path) {
-    # Return Windows path as-is
-    return(normalizePath(path, winslash = "/"))
+    # Convert Windows path to Docker-compatible path
+    path <- normalizePath(path, winslash = "/")
+    path <- gsub("^([A-Za-z]):", "/mnt/\L\1", path, perl = TRUE)
+    return(path)
   }
   
   # Check if project directory exists
@@ -518,7 +520,7 @@ docker_run_mfcl_windows <- function(
     # Construct Docker command
     docker_command <- sprintf(
       "docker run --rm -v %s:%s -w %s %s %s",
-      shQuote(sub_dir_path_docker), shQuote(sub_dir_path_docker), shQuote(sub_dir_path_docker), image_name, command
+      shQuote(sub_dir_path), shQuote(sub_dir_path_docker), shQuote(sub_dir_path_docker), image_name, command
     )
     
     if (verbose) {
