@@ -262,6 +262,16 @@ docker_run_mfcl <- function(
   # Run commands sequentially or in parallel
   run_commands <- function(docker_cmds) {
     total_cmds <- length(docker_cmds)
+    pb <- utils::txtProgressBar(min = 0, max = total_cmds, style = 3) # Progress bar
+    
+    # Shared progress counter for parallel execution
+    progress_env <- new.env(parent = emptyenv())
+    progress_env$progress <- 0
+    
+    update_progress <- function() {
+      progress_env$progress <- progress_env$progress + 1
+      utils::setTxtProgressBar(pb, progress_env$progress)
+    }
     
     capture_output <- function(cmd_info, index) {
       cmd <- cmd_info$command
@@ -275,18 +285,20 @@ docker_run_mfcl <- function(
       # Capture output and error streams
       result <- tryCatch({
         output <- system(cmd, intern = TRUE)
-        list(output = output, error = NULL)
+        output
       }, error = function(e) {
-        list(output = NULL, error = e$message)
+        paste("Error:", e$message)
       })
+      
+      # Update progress bar
+      update_progress()
       
       # Return detailed result
       return(list(
         command = cmd,
         sub_dir = sub_dir,
         index = index,
-        output = result$output,
-        error = result$error
+        output = result
       ))
     }
     
@@ -305,7 +317,9 @@ docker_run_mfcl <- function(
     } else {
       if (parallel) {
         results <- parallel::mclapply(seq_along(docker_cmds), function(i) {
-          capture_output(docker_cmds[[i]], i)
+          res <- capture_output(docker_cmds[[i]], i)
+          update_progress()
+          res
         }, mc.cores = cores)
       } else {
         results <- lapply(seq_along(docker_cmds), function(i) {
@@ -314,6 +328,7 @@ docker_run_mfcl <- function(
       }
     }
     
+    close(pb) # Close progress bar
     return(results)
   }
   
