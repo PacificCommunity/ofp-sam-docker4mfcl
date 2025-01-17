@@ -225,32 +225,30 @@ docker_run_mfcl <- function(
     }
     
     # Step 2: Standardize the local path for Windows
-    # Ensure local path uses backslashes for validation on Windows
     if (.Platform$OS.type == "windows") {
       sub_dir_path_local <- normalizePath(sub_dir_path_local, winslash = "\\", mustWork = FALSE)
     }
     
-    # Step 3: Validate the local path
-    # Check if the local path exists
+    # Step 3: Remove redundant '/mnt/c' from local paths
+    if (.Platform$OS.type == "windows" && grepl("^C:\\\\mnt\\\\c", sub_dir_path_local)) {
+      # Remove the redundant '/mnt/c' part
+      sub_dir_path_local <- sub("C:\\\\mnt\\\\c", "C:\\\\", sub_dir_path_local)
+    }
+    
+    # Step 4: Validate the local path
     if (!dir.exists(sub_dir_path_local)) {
       stop("The specified sub-directory does not exist locally: ", sub_dir_path_local)
     }
     
-    # Step 4: Convert to Docker-compatible path
-    # If the path is already in Docker format (/mnt/), do not convert again
+    # Step 5: Convert to Docker-compatible path
     sub_dir_path_docker <- if (.Platform$OS.type == "windows") {
-      if (grepl("^/mnt/", sub_dir_path_local)) {
-        sub_dir_path_local
-      } else {
-        # Convert Windows-style path (C:\\) to Docker format (/mnt/c/)
-        gsub("^([A-Za-z]):", "/mnt/\\L\\1", normalizePath(sub_dir_path_local, winslash = "/"), perl = TRUE)
-      }
+      # Convert Windows-style path (C:\\) to Docker format (/mnt/c/)
+      gsub("^([A-Za-z]):", "/mnt/\\L\\1", normalizePath(sub_dir_path_local, winslash = "/"), perl = TRUE)
     } else {
-      # For non-Windows, use the local path as-is
       sub_dir_path_local
     }
     
-    # Step 5: Return the Docker-compatible path
+    # Step 6: Return the Docker-compatible path
     return(sub_dir_path_docker)
   })
   
