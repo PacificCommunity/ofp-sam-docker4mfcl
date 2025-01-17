@@ -18,3 +18,6 @@ docker_push(local_image, remote_image, username, tag = "latest")
 \description{
 This function pushes a Docker image to Docker Hub
 }
+\examples{
+docker_push("my_image", "my_image", "my_username", "1.0")
+}

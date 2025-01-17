@@ -438,7 +438,8 @@ docker_pull <- function(image_name, version = "latest") {
 #' @param remote_image The name of the remote Docker image.
 #' @param username The Docker Hub username.
 #' @param tag The tag of the Docker image. Defaults to "latest".
-#' @examples
+#' @examples 
+#' docker_push("my_image", "my_image", "my_username", "1.0")
 docker_push <- function(local_image, remote_image, username, tag = "latest") {
   # Combine image name and tag
   full_local_image <- sprintf("%s:%s", local_image, tag)
@@ -452,7 +453,6 @@ docker_push <- function(local_image, remote_image, username, tag = "latest") {
   cat(sprintf("Pushing image: %s to Docker Hub\n", full_remote_image))
   system(sprintf("docker push %s", full_remote_image))
 }
-
 
 
 #' Run MFCL commands in Docker v2
