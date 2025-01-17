@@ -193,10 +193,10 @@ docker_run_mfcl <- function(
   # Helper function to convert paths to Docker-compatible paths
   convert_path_for_docker <- function(path) {
     if (.Platform$OS.type == "windows") {
-      # Normalize the Windows path to use single backslashes
-      path <- normalizePath(path, winslash = "\\")
-      # Ensure single backslashes by replacing double backslashes
-      path <- gsub("\\\\+", "\\", path)
+      # Normalize the Windows path to use forward slashes for Docker compatibility
+      path <- normalizePath(path, winslash = "/")
+      # Convert drive letters (e.g., C:) to /mnt/c/
+      path <- gsub("^([A-Za-z]):", "/mnt/\\L\\1", path, perl = TRUE)
     }
     return(path)
   }
@@ -214,28 +214,20 @@ docker_run_mfcl <- function(
     sub_dirs <- list("")
   }
   
-  # Normalize and validate each subdirectory (Windows-specific handling)
+  # Normalize and validate each subdirectory
   sub_dirs <- lapply(sub_dirs, function(sub_dir) {
-    # Combine project directory with subdirectory if sub_dir is relative
-    if (.Platform$OS.type == "windows") {
-      sub_dir <- normalizePath(sub_dir, winslash = "\\", mustWork = FALSE)
-      project_dir <- normalizePath(project_dir, winslash = "\\", mustWork = FALSE)
-    }
-    
-    sub_dir_path <- if (!grepl("^([A-Za-z]:|\\|/)", sub_dir)) {
+    # Combine project directory with subdirectory if relative
+    sub_dir_path <- if (!grepl("^/", sub_dir)) {
       file.path(project_dir, sub_dir)
     } else {
       sub_dir
     }
     
-    # Normalize the final path for Windows
-    if (.Platform$OS.type == "windows") {
-      sub_dir_path <- normalizePath(sub_dir_path, winslash = "\\", mustWork = FALSE)
-      #sub_dir_path <- gsub("\\\\+", "\\", sub_dir_path) # Ensure single backslashes
-    }
+    # Convert to Docker-compatible format
+    sub_dir_path <- convert_path_for_docker(sub_dir_path)
     
-    # Check if the directory exists
-    if (!dir.exists(sub_dir_path)) {
+    # Ensure the directory exists
+    if (!dir.exists(normalizePath(sub_dir_path, mustWork = FALSE))) {
       stop("The specified sub-directory does not exist: ", sub_dir_path)
     }
     
