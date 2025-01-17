@@ -363,12 +363,13 @@ docker_run_mfcl <- function(
       # Capture output and error streams
       result <- tryCatch({
         output <- system(cmd, intern = TRUE)
-        update_progress()
         output
       }, error = function(e) {
-        update_progress()
         paste("Error:", e$message)
       })
+      
+      # Update progress bar
+      update_progress()
       
       # Return detailed result
       return(list(
@@ -384,8 +385,7 @@ docker_run_mfcl <- function(
         cl <- parallel::makeCluster(cores)
         on.exit(parallel::stopCluster(cl))
         results <- parallel::parLapply(cl, seq_along(docker_cmds), function(i) {
-          res <- capture_output(docker_cmds[[i]], i)
-          res
+          capture_output(docker_cmds[[i]], i)
         })
       } else {
         results <- lapply(seq_along(docker_cmds), function(i) {
@@ -396,6 +396,7 @@ docker_run_mfcl <- function(
       if (parallel) {
         results <- parallel::mclapply(seq_along(docker_cmds), function(i) {
           res <- capture_output(docker_cmds[[i]], i)
+          update_progress()
           res
         }, mc.cores = cores)
       } else {
