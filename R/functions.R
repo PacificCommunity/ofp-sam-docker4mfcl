@@ -233,15 +233,19 @@ docker_run_mfcl <- function(
     stop("The length of 'commands' must match the length of 'sub_dirs'.")
   }
   
+  # Set default log file if verbose is FALSE and no log_file is provided
+  if (!verbose && is.null(log_file)) {
+    log_file <- file.path(project_dir, "mfcl_output.log")
+  }
+  
   # Pre-generate Docker commands
   docker_commands <- mapply(function(sub_dir, command) {
     sub_dir_path <- if (sub_dir != "") file.path(project_dir, sub_dir) else project_dir
     sub_dir_path_docker <- convert_path_for_docker(sub_dir_path)
     list(
       command = sprintf(
-        "docker run --rm -v %s:%s -w %s %s %s %s",
-        shQuote(sub_dir_path), shQuote(sub_dir_path_docker), shQuote(sub_dir_path_docker),
-        if (verbose) "" else "> /dev/null 2>&1", image_name, command
+        "docker run --rm -v %s:%s -w %s %s %s",
+        shQuote(sub_dir_path), shQuote(sub_dir_path_docker), shQuote(sub_dir_path_docker), image_name, command
       ),
       sub_dir = sub_dir_path
     )
@@ -262,6 +266,11 @@ docker_run_mfcl <- function(
     capture_output <- function(cmd_info, index) {
       cmd <- cmd_info$command
       sub_dir <- cmd_info$sub_dir
+      
+      # Redirect output to log file if verbose is FALSE
+      if (!verbose) {
+        cmd <- sprintf("%s >> %s 2>&1", cmd, shQuote(log_file))
+      }
       
       # Capture output and error streams
       result <- tryCatch({
@@ -305,7 +314,6 @@ docker_run_mfcl <- function(
     
     return(results)
   }
-  
   
   # Execute and return results
   results <- run_commands(docker_commands)
