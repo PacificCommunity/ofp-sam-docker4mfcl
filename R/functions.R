@@ -249,31 +249,48 @@ docker_run_mfcl <- function(
   
   # Run commands sequentially or in parallel
   run_commands <- function(docker_cmds) {
+    total_cmds <- length(docker_cmds)
+    pb <- txtProgressBar(min = 0, max = total_cmds, style = 3) # Create a progress bar
+    
+    capture_output <- function(cmd, index) {
+      result <- tryCatch({
+        system(cmd, intern = TRUE)
+      }, error = function(e) {
+        return(paste("Error:", e$message))
+      })
+      if (!is.null(log_file)) {
+        writeLines(result, log_file, append = TRUE)
+      }
+      setTxtProgressBar(pb, index) # Update progress bar
+      return(result)
+    }
+    
     if (.Platform$OS.type == "windows") {
       if (parallel) {
         cl <- parallel::makeCluster(cores)
         on.exit(parallel::stopCluster(cl))
-        results <- parallel::parLapply(cl, docker_cmds, function(cmd) {
-          system(cmd, intern = TRUE)
+        results <- parallel::parLapply(cl, seq_along(docker_cmds), function(i) {
+          capture_output(docker_cmds[[i]], i)
         })
-        return(results)
       } else {
-        lapply(docker_cmds, function(cmd) {
-          system(cmd, intern = TRUE)
+        results <- lapply(seq_along(docker_cmds), function(i) {
+          capture_output(docker_cmds[[i]], i)
         })
       }
     } else {
       if (parallel) {
-        results <- parallel::mclapply(docker_cmds, function(cmd) {
-          system(cmd, intern = TRUE)
+        results <- parallel::mclapply(seq_along(docker_cmds), function(i) {
+          capture_output(docker_cmds[[i]], i)
         }, mc.cores = cores)
-        return(results)
       } else {
-        lapply(docker_cmds, function(cmd) {
-          system(cmd, intern = TRUE)
+        results <- lapply(seq_along(docker_cmds), function(i) {
+          capture_output(docker_cmds[[i]], i)
         })
       }
     }
+    
+    close(pb) # Close the progress bar
+    return(results)
   }
   
   # Execute and return results
