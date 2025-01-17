@@ -193,8 +193,10 @@ docker_run_mfcl <- function(
   # Helper function to convert paths to Docker-compatible paths
   convert_path_for_docker <- function(path) {
     if (.Platform$OS.type == "windows") {
-      # Normalize the Windows path and ensure backslashes for Windows
+      # Normalize the Windows path to use single backslashes
       path <- normalizePath(path, winslash = "\\")
+      # Ensure single backslashes by replacing double backslashes
+      path <- gsub("\\\\", "\\", path)
     }
     return(path)
   }
@@ -217,6 +219,7 @@ docker_run_mfcl <- function(
     sub_dir_path <- if (sub_dir != "") file.path(project_dir, sub_dir) else project_dir
     if (.Platform$OS.type == "windows") {
       sub_dir_path <- normalizePath(sub_dir_path, winslash = "\\", mustWork = FALSE)
+      sub_dir_path <- gsub("\\\\", "\\", sub_dir_path) # Ensure single backslashes
     }
     
     if (!dir.exists(sub_dir_path)) {
