@@ -238,69 +238,86 @@ docker_run_mfcl <- function(
     log_file <- file.path(project_dir, "mfcl_output.log")
   }
   
-  # Generate Docker commands
+  # Pre-generate Docker commands
   docker_commands <- mapply(function(sub_dir, command) {
     sub_dir_path <- if (sub_dir != "") file.path(project_dir, sub_dir) else project_dir
-    if (!dir.exists(sub_dir_path)) stop("Directory does not exist: ", sub_dir_path)
-    
     sub_dir_path_docker <- convert_path_for_docker(sub_dir_path)
-    if (.Platform$OS.type == "windows") {
-      container_name <- sprintf("temp_container_%s", gsub("[^A-Za-z0-9]", "_", sub_dir))
-      create_cmd <- sprintf("docker create --name %s %s", container_name, image_name)
-      setup_cmd <- sprintf("docker cp %s/. %s:/workdir", shQuote(sub_dir_path), container_name)
-      exec_cmd <- sprintf("docker start %s && docker exec %s %s", container_name, container_name, command)
-      cleanup_cmd <- sprintf("docker rm -f %s", container_name)
-      list(create = create_cmd, setup = setup_cmd, execute = exec_cmd, cleanup = cleanup_cmd)
-    } else {
-      list(command = sprintf(
+    list(
+      command = sprintf(
         "docker run --rm -v %s:%s -w %s %s %s",
         shQuote(sub_dir_path), shQuote(sub_dir_path_docker), shQuote(sub_dir_path_docker), image_name, command
-      ))
-    }
+      ),
+      sub_dir = sub_dir_path
+    )
   }, sub_dirs, commands, SIMPLIFY = FALSE)
   
   # Verbose output
   if (verbose) {
     cat("Executing the following Docker commands:\n")
     for (cmd in docker_commands) {
-      if (.Platform$OS.type == "windows") {
-        cat("Create Command:\n", cmd$create, "\n")
-        cat("Setup Command:\n", cmd$setup, "\n")
-        cat("Execute Command:\n", cmd$execute, "\n")
-        cat("Cleanup Command:\n", cmd$cleanup, "\n")
-      } else {
-        cat(cmd$command, "\n")
-      }
+      cat(cmd$command, "\n")
     }
   }
   
-  # Run commands
+  # Run commands sequentially or in parallel
   run_commands <- function(docker_cmds) {
-    lapply(docker_cmds, function(cmd_info) {
-      if (.Platform$OS.type == "windows") {
-        system(cmd_info$create, intern = TRUE)
-        system(cmd_info$setup, intern = TRUE)
-        result <- tryCatch({
-          output <- system(cmd_info$execute, intern = TRUE)
-          system(cmd_info$cleanup, intern = TRUE)
-          output
-        }, error = function(e) {
-          system(cmd_info$cleanup, intern = TRUE)
-          paste("Error:", e$message)
+    total_cmds <- length(docker_cmds)
+    
+    capture_output <- function(cmd_info, index) {
+      cmd <- cmd_info$command
+      sub_dir <- cmd_info$sub_dir
+      
+      # Redirect output to log file if verbose is FALSE
+      if (!verbose) {
+        cmd <- sprintf("%s >> %s 2>&1", cmd, shQuote(log_file))
+      }
+      
+      # Capture output and error streams
+      result <- tryCatch({
+        output <- system(cmd, intern = TRUE)
+        list(output = output, error = NULL)
+      }, error = function(e) {
+        list(output = NULL, error = e$message)
+      })
+      
+      # Return detailed result
+      return(list(
+        command = cmd,
+        sub_dir = sub_dir,
+        index = index,
+        output = result$output,
+        error = result$error
+      ))
+    }
+    
+    if (.Platform$OS.type == "windows") {
+      if (parallel) {
+        cl <- parallel::makeCluster(cores)
+        on.exit(parallel::stopCluster(cl))
+        results <- parallel::parLapply(cl, seq_along(docker_cmds), function(i) {
+          capture_output(docker_cmds[[i]], i)
         })
       } else {
-        cmd <- cmd_info$command
-        result <- tryCatch(system(cmd, intern = TRUE), error = function(e) paste("Error:", e$message))
+        results <- lapply(seq_along(docker_cmds), function(i) {
+          capture_output(docker_cmds[[i]], i)
+        })
       }
-      return(result)
-    })
+    } else {
+      if (parallel) {
+        results <- parallel::mclapply(seq_along(docker_cmds), function(i) {
+          capture_output(docker_cmds[[i]], i)
+        }, mc.cores = cores)
+      } else {
+        results <- lapply(seq_along(docker_cmds), function(i) {
+          capture_output(docker_cmds[[i]], i)
+        })
+      }
+    }
+    
+    return(results)
   }
   
-  results <- run_commands(docker_commands)
-  return(results)
-}
-  
-  # Execute commands
+  # Execute and return results
   results <- run_commands(docker_commands)
   return(results)
 }
