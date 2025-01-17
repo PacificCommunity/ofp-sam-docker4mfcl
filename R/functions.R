@@ -239,8 +239,9 @@ docker_run_mfcl <- function(
     sub_dir_path_docker <- convert_path_for_docker(sub_dir_path)
     list(
       command = sprintf(
-        "docker run --rm -v %s:%s -w %s %s %s",
-        shQuote(sub_dir_path), shQuote(sub_dir_path_docker), shQuote(sub_dir_path_docker), image_name, command
+        "docker run --rm -v %s:%s -w %s %s %s %s",
+        shQuote(sub_dir_path), shQuote(sub_dir_path_docker), shQuote(sub_dir_path_docker),
+        if (verbose) "" else "> /dev/null 2>&1", image_name, command
       ),
       sub_dir = sub_dir_path
     )
@@ -254,7 +255,7 @@ docker_run_mfcl <- function(
     }
   }
   
-   # Run commands sequentially or in parallel
+  # Run commands sequentially or in parallel
   run_commands <- function(docker_cmds) {
     total_cmds <- length(docker_cmds)
     
