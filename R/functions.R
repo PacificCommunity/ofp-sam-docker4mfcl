@@ -239,16 +239,29 @@ docker_run_mfcl <- function(
   }
   
   # Pre-generate Docker commands
+  # Replace bind mounts with file copying for better performance
   docker_commands <- mapply(function(sub_dir, command) {
     sub_dir_path <- if (sub_dir != "") file.path(project_dir, sub_dir) else project_dir
     sub_dir_path_docker <- convert_path_for_docker(sub_dir_path)
-    list(
-      command = sprintf(
-        "docker run --rm -v %s:%s -w %s %s %s",
-        shQuote(sub_dir_path), shQuote(sub_dir_path_docker), shQuote(sub_dir_path_docker), image_name, command
-      ),
-      sub_dir = sub_dir_path
-    )
+    
+    # Optimise for Windows: Reduce reliance on `-v` by copying files if necessary
+    if (.Platform$OS.type == "windows") {
+      # Assuming necessary files are in `sub_dir_path`
+      setup_command <- sprintf("docker cp %s/. %s:/workdir", shQuote(sub_dir_path), image_name)
+      run_command <- sprintf(
+        "docker run --rm -w /workdir %s %s", 
+        image_name, command
+      )
+      list(setup = setup_command, command = run_command, sub_dir = sub_dir_path)
+    } else {
+      list(
+        command = sprintf(
+          "docker run --rm -v %s:%s -w %s %s %s",
+          shQuote(sub_dir_path), shQuote(sub_dir_path_docker), shQuote(sub_dir_path_docker), image_name, command
+        ),
+        sub_dir = sub_dir_path
+      )
+    }
   }, sub_dirs, commands, SIMPLIFY = FALSE)
   
   # Verbose output
