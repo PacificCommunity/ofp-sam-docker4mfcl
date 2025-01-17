@@ -274,9 +274,10 @@ docker_run_mfcl <- function(
       
       # Capture output and error streams
       result <- tryCatch({
-        system(cmd, intern = TRUE)
+        output <- system(cmd, intern = TRUE)
+        list(output = output, error = NULL)
       }, error = function(e) {
-        paste("Error:", e$message)
+        list(output = NULL, error = e$message)
       })
       
       # Return detailed result
@@ -284,7 +285,8 @@ docker_run_mfcl <- function(
         command = cmd,
         sub_dir = sub_dir,
         index = index,
-        output = result
+        output = result$output,
+        error = result$error
       ))
     }
     
