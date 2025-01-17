@@ -182,86 +182,98 @@ docker_prune <- function() {
 #' @examples
 #' docker_run_mfcl(image_name = "mfcl_image", commands = "./mfclo64 input_file.frq")
 docker_run_mfcl <- function(
-    image_name,            # Docker image name
-    commands,              # Command(s) to execute inside the container
-    project_dir = getwd(), # Base project directory (default: current working directory)
-    sub_dirs = NULL,       # List of subdirectories for execution
-    parallel = FALSE,      # Whether to enable parallel execution
-    cores = parallel::detectCores() - 1, # Number of cores to use for parallel execution
-    verbose = TRUE         # Whether to print the executed commands
+    image_name,            
+    commands,              
+    project_dir = getwd(), 
+    sub_dirs = NULL,       
+    parallel = FALSE,      
+    cores = parallel::detectCores() - 1, 
+    verbose = TRUE         
 ) {
+  # Helper function to convert paths to Docker-compatible paths
+  convert_path_for_docker <- function(path) {
+    if (.Platform$OS.type == "windows") {
+      path <- normalizePath(path, winslash = "/")
+      path <- gsub("^([A-Za-z]):", "/mnt/\\L\\1", path, perl = TRUE)
+    }
+    return(path)
+  }
+  
   # Check if the project directory exists
   if (!dir.exists(project_dir)) {
     stop("The project directory does not exist: ", project_dir)
   }
   
-  # If no subdirectories are provided, assume the base project directory
+  project_dir <- convert_path_for_docker(project_dir)
+  
   if (is.null(sub_dirs)) {
     sub_dirs <- list("")
   }
   
-  # If commands is a single string, replicate it for all sub_dirs
+  sub_dirs <- lapply(sub_dirs, function(sub_dir) {
+    sub_dir_path_local <- if (!grepl("^([A-Za-z]:|\\\\|/|/mnt/)", sub_dir)) {
+      file.path(project_dir, sub_dir)
+    } else {
+      sub_dir
+    }
+    
+    if (.Platform$OS.type == "windows") {
+      sub_dir_path_local <- normalizePath(sub_dir_path_local, winslash = "\\", mustWork = FALSE)
+    }
+    
+    if (.Platform$OS.type == "windows" && grepl("^C:\\\\mnt\\\\c", sub_dir_path_local)) {
+      sub_dir_path_local <- sub("C:\\\\mnt\\\\c", "C:\\\\", sub_dir_path_local)
+    }
+    
+    cat("Local path being checked:", sub_dir_path_local, "\n")
+    
+    if (!dir.exists(sub_dir_path_local)) {
+      stop("The specified sub-directory does not exist locally: ", sub_dir_path_local)
+    }
+    
+    sub_dir_path_docker <- if (.Platform$OS.type == "windows") {
+      gsub("^([A-Za-z]):", "/mnt/\\L\\1", normalizePath(sub_dir_path_local, winslash = "/"), perl = TRUE)
+    } else {
+      sub_dir_path_local
+    }
+    
+    return(sub_dir_path_docker)
+  })
+  
   if (length(commands) == 1) {
     commands <- rep(commands, length(sub_dirs))
   }
   
-  # Ensure commands match the number of sub_dirs
   if (length(commands) != length(sub_dirs)) {
     stop("The length of 'commands' must match the length of 'sub_dirs'.")
   }
   
-  # Normalize the project directory path
-  project_dir <- normalizePath(project_dir)
-  
-  # Function to run Docker for a single subdirectory and command
   run_docker_for_subdir <- function(sub_dir, command) {
-    # Combine project directory with the subdirectory
-    if (sub_dir != "") {
-      sub_dir_path <- file.path(project_dir, sub_dir)
-    } else {
-      sub_dir_path <- project_dir
-    }
-    
-    # Check if the combined directory exists
-    if (!dir.exists(sub_dir_path)) {
-      stop("The specified sub-directory does not exist: ", sub_dir_path)
-    }
-    
-    # Normalize the subdirectory path
-    sub_dir_path <- normalizePath(sub_dir_path)
-    
-    # Set the container's mount path to be the same as the host path
-    container_path <- sub_dir_path
-    
-    # Construct the Docker command
     docker_command <- sprintf(
       "docker run --rm -v %s:%s -w %s %s %s",
-      sub_dir_path, container_path, container_path, image_name, command
+      sub_dir, sub_dir, sub_dir, image_name, command
     )
     
-    # Print the command for debugging if verbose is enabled
     if (verbose) {
       cat("Running Docker command for subdirectory:", sub_dir, "\n", docker_command, "\n")
     }
     
-    # Execute the command
-    result <- system(docker_command, intern = TRUE)
+    result <- tryCatch({
+      system(docker_command, intern = TRUE)
+    }, error = function(e) {
+      stop("Failed to execute Docker command: ", docker_command, "\nError: ", e$message)
+    })
     
-    # Return the result of the executed command
     return(list(sub_dir = sub_dir, command = command, result = result))
   }
   
-  # Run commands sequentially or in parallel
   if (length(sub_dirs) == 1 || !parallel) {
-    # Sequential execution
     results <- mapply(run_docker_for_subdir, sub_dirs, commands, SIMPLIFY = FALSE)
   } else {
-    # Validate cores
     if (cores < 1) {
       stop("The number of cores must be at least 1.")
     }
     
-    # Parallel execution using mclapply
     results <- parallel::mcmapply(
       run_docker_for_subdir, sub_dirs, commands, 
       SIMPLIFY = FALSE, mc.cores = cores
@@ -270,6 +282,7 @@ docker_run_mfcl <- function(
   
   return(results)
 }
+
 
 #' Create a Dockerfile with custom options
 #' 
@@ -439,6 +452,7 @@ docker_push <- function(local_image, remote_image, username, tag = "latest") {
   cat(sprintf("Pushing image: %s to Docker Hub\n", full_remote_image))
   system(sprintf("docker push %s", full_remote_image))
 }
+<<<<<<< HEAD
 
 
 
@@ -566,3 +580,5 @@ docker_run_mfcl2 <- function(
   return(results)
 }
 
+=======
+>>>>>>> 2e4c657d398ca1dbc0cda35b082d8df131c5a826
