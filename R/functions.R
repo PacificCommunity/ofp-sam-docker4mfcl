@@ -624,20 +624,20 @@ docker_run_mfcl2 <- function(
       system(run_cmd, intern = TRUE)
     }, error = function(e) e$message)
     
-    # 2) Copy local *contents* in (sub_dir/. → /workspace)
+    # 2) Copy local *contents* in (sub_dir/. → /jobs)
     copy_in_cmd <- sprintf(
-      'docker cp "%s/." "%s:/workspace"',
+      'docker cp "%s/." "%s:/jobs"',
       sd_path, temp_name
     )
     system(copy_in_cmd, intern = FALSE)
     
     # 3) Exec the user command
     if (!verbose) {
-      c_log <- "/workspace/temp_output.log"
-      full_cmd <- sprintf('docker exec %s sh -c "cd /workspace && %s >> %s 2>&1"', 
+      c_log <- "/jobs/temp_output.log"
+      full_cmd <- sprintf('docker exec %s sh -c "cd /jobs && %s >> %s 2>&1"', 
                           temp_name, cmd, c_log)
     } else {
-      full_cmd <- sprintf('docker exec %s sh -c "cd /workspace && %s"', 
+      full_cmd <- sprintf('docker exec %s sh -c "cd /jobs && %s"', 
                           temp_name, cmd)
     }
     
@@ -645,9 +645,9 @@ docker_run_mfcl2 <- function(
       system(full_cmd, intern = TRUE)
     }, error = function(e) e$message)
     
-    # 4) Copy results back ( /workspace/. → sub_dir )
+    # 4) Copy results back ( /jobs/. → sub_dir )
     copy_out_cmd <- sprintf(
-      'docker cp "%s:/workspace/." "%s"',
+      'docker cp "%s:/jobs/." "%s"',
       temp_name, sd_path
     )
     system(copy_out_cmd, intern = FALSE)
