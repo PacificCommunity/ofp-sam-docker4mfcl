@@ -237,14 +237,13 @@ docker_run_mfcl <- function(
     }
     
     # Step 4: Convert to Docker-compatible path
+    # If the path is already in Docker format (/mnt/), do not convert again
     sub_dir_path_docker <- if (.Platform$OS.type == "windows") {
-      # Avoid double conversion: Skip paths already in Docker format (/mnt/)
       if (grepl("^/mnt/", sub_dir_path_local)) {
         sub_dir_path_local
       } else {
         # Convert Windows-style path (C:\\) to Docker format (/mnt/c/)
-        normalizePath(sub_dir_path_local, winslash = "/") %>%
-          gsub("^([A-Za-z]):", "/mnt/\\L\\1", ., perl = TRUE)
+        gsub("^([A-Za-z]):", "/mnt/\\L\\1", normalizePath(sub_dir_path_local, winslash = "/"), perl = TRUE)
       }
     } else {
       # For non-Windows, use the local path as-is
