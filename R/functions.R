@@ -262,20 +262,20 @@ docker_run_mfcl <- function(
     capture_output <- function(cmd_info, index) {
       cmd <- cmd_info$command
       sub_dir <- cmd_info$sub_dir
-      # Determine the null device based on the operating system
-      null_device <- if (.Platform$OS.type == "windows") "NUL" else "/dev/null"
       
-      # Redirect output and error streams to suppress messages
+      # Capture output and error streams
       result <- tryCatch({
-        if (is.null(log_file)) {
-          # Suppress all output
-          system(paste(cmd, ">", null_device, "2>&1"), intern = TRUE)
-        } else {
-          # Redirect output to log file
-          system(paste(cmd, ">>", shQuote(log_file), "2>&1"), intern = TRUE)
+        output <- system(cmd, intern = TRUE)
+        if (!is.null(log_file)) {
+          writeLines(output, log_file, append = TRUE)
         }
+        output
       }, error = function(e) {
-        return(paste("Error:", e$message))
+        error_msg <- paste("Error:", e$message)
+        if (!is.null(log_file)) {
+          writeLines(error_msg, log_file, append = TRUE)
+        }
+        return(error_msg)
       })
       
       utils::setTxtProgressBar(pb, index) # Update progress bar
