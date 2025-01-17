@@ -510,21 +510,20 @@ docker_push <- function(local_image, remote_image, username, tag = "latest") {
 #' @examples
 #' docker_run_mfcl2(image_name = "mfcl_image", commands = "./mfclo64 input_file.frq")
 docker_run_mfcl2 <- function(
-    image_name,            # Docker image name
-    commands,              # Commands to execute inside the container
-    project_dir = getwd(), # Base project directory (default: current working directory)
-    sub_dirs = NULL,       # List of subdirectories for execution
-    parallel = FALSE,      # Enable parallel execution
-    cores = parallel::detectCores() - 1, # Number of cores for parallel execution
-    verbose = TRUE,        # Print command details
-    log_file = NULL        # Log file to save command outputs
+    image_name,            
+    commands,              
+    project_dir = getwd(), 
+    sub_dirs = NULL,       
+    parallel = FALSE,      
+    cores = parallel::detectCores() - 1, 
+    verbose = TRUE,        
+    log_file = NULL        
 ) {
   # --------------------------------------------------------------------------
-  # Helper: convert path for volume mounting (used in Linux/macOS only)
+  # Helper: convert path for volume mounting (Linux/macOS only)
   # --------------------------------------------------------------------------
   convert_path_for_docker <- function(path) {
     if (.Platform$OS.type == "windows") {
-      # We'll do the copy approach on Windows, but let's keep for clarity
       path <- normalizePath(path, winslash = "/")
       path <- gsub("^([A-Za-z]):", "/mnt/\\1", path, perl = TRUE)
     } else {
@@ -533,30 +532,32 @@ docker_run_mfcl2 <- function(
     return(path)
   }
   
-  # Helper function for setting default value
-  `%||%` <- function(a, b) {
-    if (!is.null(a)) a else b
-  }
+  # --------------------------------------------------------------------------
+  # Default operator
+  # --------------------------------------------------------------------------
+  `%||%` <- function(a, b) if (!is.null(a)) a else b
   
   # --------------------------------------------------------------------------
-  # Validate input directories
+  # Check project_dir
   # --------------------------------------------------------------------------
   if (!dir.exists(project_dir)) {
     stop("The project directory does not exist: ", project_dir)
   }
+  
+  # --------------------------------------------------------------------------
+  # Process sub_dirs
+  # --------------------------------------------------------------------------
   sub_dirs <- sub_dirs %||% list("")
-  
-  invalid_dirs <- vapply(sub_dirs, function(sub_dir) {
-    sub_dir_path <- if (sub_dir != "") file.path(project_dir, sub_dir) else project_dir
-    !dir.exists(sub_dir_path)
+  invalid_dirs <- vapply(sub_dirs, function(sd) {
+    sd_path <- if (sd != "") file.path(project_dir, sd) else project_dir
+    !dir.exists(sd_path)
   }, logical(1))
-  
   if (any(invalid_dirs)) {
     stop("The following subdirectories do not exist: ", paste(sub_dirs[invalid_dirs], collapse = ", "))
   }
   
   # --------------------------------------------------------------------------
-  # Adjust commands length if necessary
+  # Adjust commands
   # --------------------------------------------------------------------------
   if (length(commands) == 1) {
     commands <- rep(commands, length(sub_dirs))
@@ -565,14 +566,14 @@ docker_run_mfcl2 <- function(
   }
   
   # --------------------------------------------------------------------------
-  # Log file handling if verbose=FALSE
+  # Logging
   # --------------------------------------------------------------------------
   if (!verbose && is.null(log_file)) {
     log_file <- file.path(project_dir, "mfcl_output.log")
   }
   
   # --------------------------------------------------------------------------
-  # 1) Helper (Linux/macOS): volume mount approach
+  # Volume-mount approach (Linux/macOS)
   # --------------------------------------------------------------------------
   run_single_command_volume <- function(sd, cmd) {
     sd_path <- if (sd != "") file.path(project_dir, sd) else project_dir
@@ -587,12 +588,10 @@ docker_run_mfcl2 <- function(
       cmd
     )
     
-    # If not verbose, append log redirection
     if (!verbose) {
       docker_cmd <- sprintf("%s >> %s 2>&1", docker_cmd, shQuote(log_file))
     }
     
-    # Run command
     res <- tryCatch({
       out <- system(docker_cmd, intern = TRUE)
       list(output = out, error = NULL)
@@ -609,68 +608,63 @@ docker_run_mfcl2 <- function(
   }
   
   # --------------------------------------------------------------------------
-  # 2) Helper (Windows): no-volume (copy) approach
-  #    - Copy only the contents (.) so we don't nest subdirectories
+  # No-volume (copy) approach (Windows) - using 'sleep infinity'
   # --------------------------------------------------------------------------
   run_single_command_no_mount <- function(sd, cmd) {
     sd_path <- if (sd != "") file.path(project_dir, sd) else project_dir
     
-    # 1) Create a temporary container
+    # 1) Create a temporary container running 'sleep infinity'
+    #    so it stays up until we stop/remove it.
     cid <- system2(
       command = "docker",
-      args    = c("create", image_name, "sh", "-c", "echo Container ready"),
-      stdout  = TRUE, 
+      args    = c("create", image_name, "sh", "-c", "sleep infinity"),
+      stdout  = TRUE,
       stderr  = TRUE
     )
     cid <- trimws(cid)
     
     # 2) Copy local *contents* into /workspace
-    #    `sd_path/.` means "contents of sd_path" so we don't nest an extra folder
     system2(
       command = "docker",
       args    = c("cp", paste0(sd_path, "/."), sprintf("%s:/workspace", cid)),
-      stdout  = FALSE, 
+      stdout  = FALSE,
       stderr  = FALSE
     )
     
-    # 3) Start the container and then exec the real command
+    # 3) Start the container
     system2("docker", c("start", cid), stdout = FALSE, stderr = FALSE)
     
-    # Build the command we want to run
+    # 4) Exec the user command
     if (!verbose) {
-      container_log <- "/workspace/temp_output.log"
-      full_cmd <- sprintf("cd /workspace && %s >> %s 2>&1", cmd, container_log)
+      c_log <- "/workspace/temp_output.log"
+      full_cmd <- sprintf("cd /workspace && %s >> %s 2>&1", cmd, c_log)
     } else {
       full_cmd <- sprintf("cd /workspace && %s", cmd)
     }
     
     result <- tryCatch({
-      system2(
-        command = "docker",
-        args    = c("exec", cid, "sh", "-c", full_cmd),
-        stdout  = TRUE, 
-        stderr  = TRUE
-      )
+      system2("docker", c("exec", cid, "sh", "-c", full_cmd), stdout = TRUE, stderr = TRUE)
     }, error = function(e) e$message)
     
-    # 4) Copy results back to local directory (again using .)
-    #    This ensures any changes overwrite/replace existing files in sd_path
+    # 5) Copy results back
     system2(
       command = "docker",
       args    = c("cp", sprintf("%s:/workspace/.", cid), sd_path),
-      stdout  = FALSE, 
+      stdout  = FALSE,
       stderr  = FALSE
     )
     
-    # 5) Remove the temporary container
-    system2("docker", c("rm", cid), stdout = FALSE, stderr = FALSE)
+    # 6) Stop & remove the container
+    #    (First stop, then remove to be safe.)
+    system2("docker", c("stop", cid), stdout = FALSE, stderr = FALSE)
+    system2("docker", c("rm", cid),   stdout = FALSE, stderr = FALSE)
     
-    # 6) If logging is off, append container log to local log file
+    # 7) Merge logs if needed
     if (!verbose) {
-      container_log_local <- file.path(sd_path, "temp_output.log")
-      if (file.exists(container_log_local)) {
-        cat(readLines(container_log_local), sep = "\n", file = log_file, append = TRUE)
-        file.remove(container_log_local)
+      c_log_local <- file.path(sd_path, "temp_output.log")
+      if (file.exists(c_log_local)) {
+        cat(readLines(c_log_local), sep = "\n", file = log_file, append = TRUE)
+        file.remove(c_log_local)
       }
     }
     
@@ -683,24 +677,19 @@ docker_run_mfcl2 <- function(
   }
   
   # --------------------------------------------------------------------------
-  # 3) Orchestrate execution, either sequentially or in parallel
+  # Master function to orchestrate
   # --------------------------------------------------------------------------
   run_commands <- function(sub_dirs, commands) {
-    # Helper to pick correct approach based on OS
     capture_output <- function(i) {
       sd  <- sub_dirs[[i]]
       cmd <- commands[[i]]
-      
       if (.Platform$OS.type == "windows") {
-        # Use copy approach
         run_single_command_no_mount(sd, cmd)
       } else {
-        # Use volume mount approach
         run_single_command_volume(sd, cmd)
       }
     }
     
-    # Parallel or sequential
     if (parallel) {
       if (.Platform$OS.type == "windows") {
         cl <- parallel::makeCluster(cores)
@@ -712,12 +701,11 @@ docker_run_mfcl2 <- function(
     } else {
       results <- lapply(seq_along(sub_dirs), capture_output)
     }
-    
     return(results)
   }
   
   # --------------------------------------------------------------------------
-  # 4) (Optional) Verbose output of intended commands
+  # Verbose output for clarity
   # --------------------------------------------------------------------------
   if (verbose) {
     cat("docker_run_mfcl: about to execute the following commands:\n")
@@ -726,17 +714,18 @@ docker_run_mfcl2 <- function(
       cat(sprintf("  Command:      %s\n\n", commands[[i]]))
     }
     if (.Platform$OS.type == "windows") {
-      cat("  => Using 'copy in/out' approach (no volume mount) for Windows.\n\n")
+      cat("  => Using 'copy in/out' approach (sleep infinity) for Windows.\n\n")
     } else {
       cat("  => Using volume mount approach for non-Windows.\n\n")
     }
   }
   
   # --------------------------------------------------------------------------
-  # 5) Execute
+  # Execute all
   # --------------------------------------------------------------------------
   results <- run_commands(sub_dirs, commands)
   return(results)
 }
+
 
 
