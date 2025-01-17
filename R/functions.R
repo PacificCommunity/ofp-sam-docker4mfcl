@@ -515,14 +515,6 @@ docker_run_mfcl_windows <- function(
     sub_dir_path <- if (sub_dir != "") file.path(project_dir, sub_dir) else project_dir
     sub_dir_path_docker <- convert_path_for_docker(sub_dir_path)
     
-    # Ensure the executable file has the correct permissions
-    chmod_command <- sprintf("chmod 700 %s/mfclo64", shQuote(sub_dir_path))
-    if (verbose) {
-      cat("Ensuring execute permission for mfclo64:
-", chmod_command, "\n")
-    }
-    system(chmod_command, intern = TRUE)
-    
     # Construct Docker command
     docker_command <- sprintf(
       "docker run --rm -v %s:%s -w %s %s %s",
@@ -530,8 +522,7 @@ docker_run_mfcl_windows <- function(
     )
     
     if (verbose) {
-      cat("Executing Docker command:
-", docker_command, "\n")
+      cat("Executing Docker command:\n", docker_command, "\n")
     }
     
     # Run the command
