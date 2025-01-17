@@ -243,16 +243,25 @@ docker_run_mfcl <- function(
     sub_dir_path <- if (sub_dir != "") file.path(project_dir, sub_dir) else project_dir
     sub_dir_path_docker <- convert_path_for_docker(sub_dir_path)
     
-    if (.Platform$OS.type == "windows" && parallel) {
-      # Use docker cp for Windows in parallel mode
-      setup_cmd <- sprintf("docker cp %s/. %s:/workdir", shQuote(sub_dir_path), image_name)
-      run_cmd <- sprintf(
-        "docker run --rm -w /workdir %s %s",
-        image_name, command
+    if (.Platform$OS.type == "windows") {
+      # Create a temporary container, copy files, and execute commands
+      container_name <- sprintf("temp_container_%s", sub_dir)
+      create_cmd <- sprintf("docker create --name %s %s", container_name, image_name)
+      setup_cmd <- sprintf("docker cp %s/. %s:/workdir", shQuote(sub_dir_path), container_name)
+      start_cmd <- sprintf("docker start %s", container_name)
+      exec_cmd <- sprintf("docker exec %s %s", container_name, command)
+      cleanup_cmd <- sprintf("docker rm -f %s", container_name)
+      
+      list(
+        create = create_cmd,
+        setup = setup_cmd,
+        start = start_cmd,
+        command = exec_cmd,
+        cleanup = cleanup_cmd,
+        sub_dir = sub_dir_path
       )
-      list(setup = setup_cmd, command = run_cmd, sub_dir = sub_dir_path)
     } else {
-      # Use -v mount for simplicity
+      # Fallback to -v mount for non-Windows systems
       list(
         command = sprintf(
           "docker run --rm -v %s:%s -w %s %s %s",
