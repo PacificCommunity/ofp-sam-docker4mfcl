@@ -270,17 +270,13 @@ docker_run_mfcl <- function(
         }
         output
       }, error = function(e) {
-        error_msg <- paste("Error:", e$message)
+        error_msg <- paste("Error in command:", cmd, "\nSub-directory:", sub_dir, "\nMessage:", e$message)
         if (!is.null(log_file)) {
           writeLines(error_msg, log_file, append = TRUE)
         }
-        return(error_msg)
+        stop(error_msg)
       })
       
-      # Print completion message
-      message(sprintf("Completed command %d/%d in sub-directory: %s", index, total_cmds, sub_dir))
-      
-      # Return detailed result
       return(list(
         command = cmd,
         sub_dir = sub_dir,
