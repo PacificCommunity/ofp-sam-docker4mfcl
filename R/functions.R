@@ -482,7 +482,7 @@ docker_run_mfcl_windows <- function(
   convert_path_for_docker <- function(path) {
     # Convert Windows path to Docker-compatible path
     path <- normalizePath(path, winslash = "/")
-    path <- gsub("^([A-Za-z]):", "/mnt/\L\1", path, perl = TRUE)
+    path <- gsub("^([A-Za-z]):", "/mnt/\\1", path, perl = TRUE)
     return(path)
   }
   
