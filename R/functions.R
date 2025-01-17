@@ -275,8 +275,10 @@ docker_run_mfcl <- function(
       # Capture output and error streams
       result <- tryCatch({
         output <- system(cmd, intern = TRUE)
+        cat(sprintf("[INFO] Command %d/%d completed: %s\n", index, total_cmds, sub_dir))
         list(output = output, error = NULL)
       }, error = function(e) {
+        cat(sprintf("[ERROR] Command %d/%d failed: %s\n", index, total_cmds, sub_dir))
         list(output = NULL, error = e$message)
       })
       
