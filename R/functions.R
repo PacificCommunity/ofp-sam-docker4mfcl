@@ -182,107 +182,104 @@ docker_prune <- function() {
 #' @examples
 #' docker_run_mfcl(image_name = "mfcl_image", commands = "./mfclo64 input_file.frq")
 docker_run_mfcl <- function(
-    image_name,            
-    commands,              
-    project_dir = getwd(), 
-    sub_dirs = NULL,       
-    parallel = FALSE,      
-    cores = parallel::detectCores() - 1, 
-    verbose = TRUE         
+    image_name,            # Docker image name
+    commands,              # Commands to execute inside the container
+    project_dir = getwd(), # Base project directory (default: current working directory)
+    sub_dirs = NULL,       # List of subdirectories for execution
+    parallel = FALSE,      # Enable parallel execution
+    cores = parallel::detectCores() - 1, # Number of cores for parallel execution
+    verbose = TRUE         # Print command details
 ) {
-  # Helper function to convert paths to Docker-compatible paths
+  # Path conversion for Docker (Windows and non-Windows)
   convert_path_for_docker <- function(path) {
     if (.Platform$OS.type == "windows") {
       path <- normalizePath(path, winslash = "/")
-      path <- gsub("^([A-Za-z]):", "/mnt/\\L\\1", path, perl = TRUE)
+      path <- gsub("^([A-Za-z]):", "/mnt/\\1", path, perl = TRUE)
+    } else {
+      path <- normalizePath(path)
     }
     return(path)
   }
   
-  # Check if the project directory exists
+  # Helper function for setting default value
+  `%||%` <- function(a, b) {
+    if (!is.null(a)) a else b
+  }
+  
+  # Check if project directory exists
   if (!dir.exists(project_dir)) {
     stop("The project directory does not exist: ", project_dir)
   }
   
-  project_dir <- convert_path_for_docker(project_dir)
+  # Set sub_dirs to root if not provided
+  sub_dirs <- sub_dirs %||% list("")
   
-  if (is.null(sub_dirs)) {
-    sub_dirs <- list("")
+  # Validate subdirectories
+  invalid_dirs <- vapply(sub_dirs, function(sub_dir) {
+    sub_dir_path <- if (sub_dir != "") file.path(project_dir, sub_dir) else project_dir
+    !dir.exists(sub_dir_path)
+  }, logical(1))
+  
+  if (any(invalid_dirs)) {
+    stop("The following subdirectories do not exist: ", paste(sub_dirs[invalid_dirs], collapse = ", "))
   }
   
-  sub_dirs <- lapply(sub_dirs, function(sub_dir) {
-    sub_dir_path_local <- if (!grepl("^([A-Za-z]:|\\\\|/|/mnt/)", sub_dir)) {
-      file.path(project_dir, sub_dir)
-    } else {
-      sub_dir
-    }
-    
-    if (.Platform$OS.type == "windows") {
-      sub_dir_path_local <- normalizePath(sub_dir_path_local, winslash = "\\", mustWork = FALSE)
-    }
-    
-    if (.Platform$OS.type == "windows" && grepl("^C:\\\\mnt\\\\c", sub_dir_path_local)) {
-      sub_dir_path_local <- sub("C:\\\\mnt\\\\c", "C:\\\\", sub_dir_path_local)
-    }
-    
-    cat("Local path being checked:", sub_dir_path_local, "\n")
-    
-    if (!dir.exists(sub_dir_path_local)) {
-      stop("The specified sub-directory does not exist locally: ", sub_dir_path_local)
-    }
-    
-    sub_dir_path_docker <- if (.Platform$OS.type == "windows") {
-      gsub("^([A-Za-z]):", "/mnt/\\L\\1", normalizePath(sub_dir_path_local, winslash = "/"), perl = TRUE)
-    } else {
-      sub_dir_path_local
-    }
-    
-    return(sub_dir_path_docker)
-  })
-  
+  # Adjust commands length if necessary
   if (length(commands) == 1) {
     commands <- rep(commands, length(sub_dirs))
-  }
-  
-  if (length(commands) != length(sub_dirs)) {
+  } else if (length(commands) != length(sub_dirs)) {
     stop("The length of 'commands' must match the length of 'sub_dirs'.")
   }
   
-  run_docker_for_subdir <- function(sub_dir, command) {
-    docker_command <- sprintf(
+  # Pre-generate Docker commands
+  docker_commands <- mapply(function(sub_dir, command) {
+    sub_dir_path <- if (sub_dir != "") file.path(project_dir, sub_dir) else project_dir
+    sub_dir_path_docker <- convert_path_for_docker(sub_dir_path)
+    sprintf(
       "docker run --rm -v %s:%s -w %s %s %s",
-      sub_dir, sub_dir, sub_dir, image_name, command
+      shQuote(sub_dir_path), shQuote(sub_dir_path_docker), shQuote(sub_dir_path_docker), image_name, command
     )
-    
-    if (verbose) {
-      cat("Running Docker command for subdirectory:", sub_dir, "\n", docker_command, "\n")
-    }
-    
-    result <- tryCatch({
-      system(docker_command, intern = TRUE)
-    }, error = function(e) {
-      stop("Failed to execute Docker command: ", docker_command, "\nError: ", e$message)
-    })
-    
-    return(list(sub_dir = sub_dir, command = command, result = result))
+  }, sub_dirs, commands, SIMPLIFY = FALSE)
+  
+  # Verbose output
+  if (verbose) {
+    cat("Executing the following Docker commands:\n")
+    cat(paste(docker_commands, collapse = "\n"), "\n")
   }
   
-  if (length(sub_dirs) == 1 || !parallel) {
-    results <- mapply(run_docker_for_subdir, sub_dirs, commands, SIMPLIFY = FALSE)
-  } else {
-    if (cores < 1) {
-      stop("The number of cores must be at least 1.")
+  # Run commands sequentially or in parallel
+  run_commands <- function(docker_cmds) {
+    if (.Platform$OS.type == "windows") {
+      if (parallel) {
+        cl <- parallel::makeCluster(cores)
+        on.exit(parallel::stopCluster(cl))
+        results <- parallel::parLapply(cl, docker_cmds, function(cmd) {
+          system(cmd, intern = TRUE)
+        })
+        return(results)
+      } else {
+        lapply(docker_cmds, function(cmd) {
+          system(cmd, intern = TRUE)
+        })
+      }
+    } else {
+      if (parallel) {
+        results <- parallel::mclapply(docker_cmds, function(cmd) {
+          system(cmd, intern = TRUE)
+        }, mc.cores = cores)
+        return(results)
+      } else {
+        lapply(docker_cmds, function(cmd) {
+          system(cmd, intern = TRUE)
+        })
+      }
     }
-    
-    results <- parallel::mcmapply(
-      run_docker_for_subdir, sub_dirs, commands, 
-      SIMPLIFY = FALSE, mc.cores = cores
-    )
   }
   
+  # Execute and return results
+  results <- run_commands(docker_commands)
   return(results)
 }
-
 
 #' Create a Dockerfile with custom options
 #' 
@@ -481,7 +478,7 @@ docker_run_mfcl_windows <- function(
   # Path conversion for Docker (Windows specific)
   convert_path_for_docker <- function(path) {
     path <- normalizePath(path, winslash = "/")
-    gsub("^([A-Za-z]):", "/mnt/\1", path, perl = TRUE)
+    gsub("^([A-Za-z]):", "/mnt/\\1", path, perl = TRUE)
   }
   
   # Helper function for setting default value
@@ -533,9 +530,11 @@ docker_run_mfcl_windows <- function(
   # Run commands sequentially or in parallel
   run_commands <- function(docker_cmds) {
     if (parallel) {
-      results <- parallel::mclapply(docker_cmds, function(cmd) {
+      cl <- parallel::makeCluster(cores)
+      on.exit(parallel::stopCluster(cl))
+      results <- parallel::parLapply(cl, docker_cmds, function(cmd) {
         system(cmd, intern = TRUE)
-      }, mc.cores = cores)
+      })
       return(results)
     } else {
       lapply(docker_cmds, function(cmd) {
