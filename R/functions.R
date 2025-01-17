@@ -528,7 +528,7 @@ docker_run_mfcl_windows <- function(
     
     # Construct the Docker command for chmod
     chmod_command <- sprintf(
-      "docker run --rm -v %s:%s -w %s %s chmod +x mfclo64",
+      "docker run --rm -v %s:%s -w %s %s chmod 700 mfclo64",
       shQuote(sub_dir_path_docker), shQuote(sub_dir_path_docker), shQuote(sub_dir_path_docker), image_name
     )
     if (verbose) {
