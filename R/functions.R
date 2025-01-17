@@ -452,7 +452,6 @@ docker_push <- function(local_image, remote_image, username, tag = "latest") {
   cat(sprintf("Pushing image: %s to Docker Hub\n", full_remote_image))
   system(sprintf("docker push %s", full_remote_image))
 }
-<<<<<<< HEAD
 
 
 
@@ -579,6 +578,3 @@ docker_run_mfcl2 <- function(
   
   return(results)
 }
-
-=======
->>>>>>> 2e4c657d398ca1dbc0cda35b082d8df131c5a826
