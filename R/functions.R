@@ -254,13 +254,9 @@ docker_run_mfcl <- function(
     }
   }
   
-  # Run commands sequentially or in parallel
-  # Run commands sequentially or in parallel
+   # Run commands sequentially or in parallel
   run_commands <- function(docker_cmds) {
     total_cmds <- length(docker_cmds)
-    pb <- utils::txtProgressBar(min = 0, max = total_cmds, style = 3) # Progress bar
-    progress_env <- new.env(parent = emptyenv())
-    progress_env$progress <- 0
     
     capture_output <- function(cmd_info, index) {
       cmd <- cmd_info$command
@@ -281,15 +277,15 @@ docker_run_mfcl <- function(
         return(error_msg)
       })
       
-      # Update progress bar in the main process
-      progress_env$progress <- progress_env$progress + 1
-      utils::setTxtProgressBar(pb, progress_env$progress)
+      # Print completion message
+      message(sprintf("Completed command %d/%d in sub-directory: %s", index, total_cmds, sub_dir))
       
       # Return detailed result
       return(list(
         command = cmd,
         sub_dir = sub_dir,
-        index = index
+        index = index,
+        output = result
       ))
     }
     
@@ -317,7 +313,6 @@ docker_run_mfcl <- function(
       }
     }
     
-    close(pb) # Close progress bar
     return(results)
   }
   
