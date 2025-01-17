@@ -264,19 +264,12 @@ docker_run_mfcl <- function(
       
       # Capture output and error streams
       result <- tryCatch({
-        output <- system(cmd, intern = TRUE)
-        if (!is.null(log_file)) {
-          writeLines(output, log_file, append = TRUE)
-        }
-        output
+        system(cmd, intern = TRUE)
       }, error = function(e) {
-        error_msg <- paste("Error in command:", cmd, "\nSub-directory:", sub_dir, "\nMessage:", e$message)
-        if (!is.null(log_file)) {
-          writeLines(error_msg, log_file, append = TRUE)
-        }
-        stop(error_msg)
+        paste("Error:", e$message)
       })
       
+      # Return detailed result
       return(list(
         command = cmd,
         sub_dir = sub_dir,
@@ -311,6 +304,7 @@ docker_run_mfcl <- function(
     
     return(results)
   }
+  
   
   # Execute and return results
   results <- run_commands(docker_commands)
