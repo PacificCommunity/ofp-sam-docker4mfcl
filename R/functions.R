@@ -219,7 +219,7 @@ docker_run_mfcl <- function(
     sub_dir_path <- if (sub_dir != "") file.path(project_dir, sub_dir) else project_dir
     if (.Platform$OS.type == "windows") {
       sub_dir_path <- normalizePath(sub_dir_path, winslash = "\\", mustWork = FALSE)
-      sub_dir_path <- gsub("\\\\", "\\", sub_dir_path) # Ensure single backslashes
+      #sub_dir_path <- gsub("\\\\", "\\", sub_dir_path) # Ensure single backslashes
     }
     
     if (!dir.exists(sub_dir_path)) {
