@@ -210,35 +210,35 @@ docker_run_mfcl <- function(
     sub_dirs <- list("")
   }
   
-  sub_dirs <- lapply(sub_dirs, function(sub_dir) {
-    sub_dir_path_local <- if (!grepl("^([A-Za-z]:|\\\\|/|/mnt/)", sub_dir)) {
-      file.path(project_dir, sub_dir)
-    } else {
-      sub_dir
+  run_docker_for_subdir <- function(sub_dir, command) {
+    # Construct the Docker command
+    docker_command <- sprintf(
+      "docker run --rm -v %s:%s -w %s %s %s",
+      sub_dir, sub_dir, sub_dir, image_name, command
+    )
+    
+    # Debugging: Print the Docker command
+    if (verbose) {
+      cat("Docker Command:", docker_command, "\n")
     }
     
-    if (.Platform$OS.type == "windows") {
-      sub_dir_path_local <- normalizePath(sub_dir_path_local, winslash = "\\", mustWork = FALSE)
-    }
+    # Check if the file exists inside the container
+    check_command <- sprintf(
+      "docker run --rm -v %s:%s -w %s %s ls -l",
+      sub_dir, sub_dir, sub_dir, image_name
+    )
+    cat("Checking container contents with:", check_command, "\n")
+    system(check_command, intern = TRUE)
     
-    if (.Platform$OS.type == "windows" && grepl("^C:\\\\mnt\\\\c", sub_dir_path_local)) {
-      sub_dir_path_local <- sub("C:\\\\mnt\\\\c", "C:\\\\", sub_dir_path_local)
-    }
+    # Execute the Docker command
+    result <- tryCatch({
+      system(docker_command, intern = TRUE)
+    }, error = function(e) {
+      stop("Failed to execute Docker command: ", docker_command, "\nError: ", e$message)
+    })
     
-    cat("Local path being checked:", sub_dir_path_local, "\n")
-    
-    if (!dir.exists(sub_dir_path_local)) {
-      stop("The specified sub-directory does not exist locally: ", sub_dir_path_local)
-    }
-    
-    sub_dir_path_docker <- if (.Platform$OS.type == "windows") {
-      gsub("^([A-Za-z]):", "/mnt/\\L\\1", normalizePath(sub_dir_path_local, winslash = "/"), perl = TRUE)
-    } else {
-      sub_dir_path_local
-    }
-    
-    return(sub_dir_path_docker)
-  })
+    return(list(sub_dir = sub_dir, command = command, result = result))
+  }
   
   if (length(commands) == 1) {
     commands <- rep(commands, length(sub_dirs))
