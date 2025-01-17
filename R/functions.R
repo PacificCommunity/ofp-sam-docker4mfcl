@@ -272,7 +272,13 @@ docker_run_mfcl <- function(
       })
       
       utils::setTxtProgressBar(pb, index) # Update progress bar
-      return(result)
+      
+      # Return detailed result
+      return(list(
+        command = cmd,
+        index = index,
+        result = result
+      ))
     }
     
     if (.Platform$OS.type == "windows") {
