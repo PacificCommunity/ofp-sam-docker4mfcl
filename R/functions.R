@@ -510,19 +510,49 @@ docker_push <- function(local_image, remote_image, username, tag = "latest") {
 #' @examples
 #' docker_run_mfcl2(image_name = "mfcl_image", commands = "./mfclo64 input_file.frq")
 docker_run_mfcl2 <- function(
-    image_name,            
-    commands,              
-    project_dir = getwd(), 
-    sub_dirs = NULL,       
-    parallel = FALSE,      
-    cores = parallel::detectCores() - 1, 
-    verbose = TRUE,        
-    log_file = NULL        
+    image_name,            # Docker image name
+    commands,              # Commands to execute
+    project_dir = getwd(), # Base project directory
+    sub_dirs = NULL,       # List of subdirectories for execution
+    parallel = FALSE,      # Enable parallel execution
+    cores = parallel::detectCores() - 1, # Number of cores for parallel execution
+    verbose = TRUE,        # Print command details
+    log_file = NULL        # Log file to save command outputs if verbose=FALSE
 ) {
-  # --------------------------------------------------------------------------
-  # Helper: convert path for volume mounting (Linux/macOS only)
-  # --------------------------------------------------------------------------
+  `%||%` <- function(a, b) if (!is.null(a)) a else b
+  
+  # ----------------------------------------------------------------------------
+  # 1) Basic checks & setup
+  # ----------------------------------------------------------------------------
+  if (!dir.exists(project_dir)) {
+    stop("The project directory does not exist: ", project_dir)
+  }
+  
+  sub_dirs <- sub_dirs %||% list("")
+  
+  invalid_dirs <- vapply(sub_dirs, function(sd) {
+    sd_path <- if (nzchar(sd)) file.path(project_dir, sd) else project_dir
+    !dir.exists(sd_path)
+  }, logical(1))
+  if (any(invalid_dirs)) {
+    stop("These subdirectories do not exist: ", paste(sub_dirs[invalid_dirs], collapse = ", "))
+  }
+  
+  if (length(commands) == 1) {
+    commands <- rep(commands, length(sub_dirs))
+  } else if (length(commands) != length(sub_dirs)) {
+    stop("The length of 'commands' must match the length of 'sub_dirs'.")
+  }
+  
+  if (!verbose && is.null(log_file)) {
+    log_file <- file.path(project_dir, "mfcl_output.log")
+  }
+  
+  # ----------------------------------------------------------------------------
+  # 2) Non-Windows: volume mount approach
+  # ----------------------------------------------------------------------------
   convert_path_for_docker <- function(path) {
+    # For completeness, though we only use it on Linux/macOS
     if (.Platform$OS.type == "windows") {
       path <- normalizePath(path, winslash = "/")
       path <- gsub("^([A-Za-z]):", "/mnt/\\1", path, perl = TRUE)
@@ -532,57 +562,14 @@ docker_run_mfcl2 <- function(
     return(path)
   }
   
-  # --------------------------------------------------------------------------
-  # Helper for setting default
-  # --------------------------------------------------------------------------
-  `%||%` <- function(a, b) if (!is.null(a)) a else b
-  
-  # --------------------------------------------------------------------------
-  # Check project directory
-  # --------------------------------------------------------------------------
-  if (!dir.exists(project_dir)) {
-    stop("The project directory does not exist: ", project_dir)
-  }
-  
-  # --------------------------------------------------------------------------
-  # Subdirectories
-  # --------------------------------------------------------------------------
-  sub_dirs <- sub_dirs %||% list("")
-  invalid_dirs <- vapply(sub_dirs, function(sd) {
-    sd_path <- if (sd != "") file.path(project_dir, sd) else project_dir
-    !dir.exists(sd_path)
-  }, logical(1))
-  if (any(invalid_dirs)) {
-    stop("The following subdirectories do not exist: ", paste(sub_dirs[invalid_dirs], collapse = ", "))
-  }
-  
-  # --------------------------------------------------------------------------
-  # Commands
-  # --------------------------------------------------------------------------
-  if (length(commands) == 1) {
-    commands <- rep(commands, length(sub_dirs))
-  } else if (length(commands) != length(sub_dirs)) {
-    stop("The length of 'commands' must match the length of 'sub_dirs'.")
-  }
-  
-  # --------------------------------------------------------------------------
-  # Log file
-  # --------------------------------------------------------------------------
-  if (!verbose && is.null(log_file)) {
-    log_file <- file.path(project_dir, "mfcl_output.log")
-  }
-  
-  # --------------------------------------------------------------------------
-  # Volume mount approach (Linux/macOS)
-  # --------------------------------------------------------------------------
-  run_single_command_volume <- function(sd, cmd) {
-    sd_path <- if (sd != "") file.path(project_dir, sd) else project_dir
+  run_single_subdir_volume <- function(sd, cmd) {
+    sd_path <- if (nzchar(sd)) file.path(project_dir, sd) else project_dir
     sd_path_docker <- convert_path_for_docker(sd_path)
     
     docker_cmd <- sprintf(
       "docker run --rm -v %s:%s -w %s %s %s",
-      shQuote(sd_path),
-      shQuote(sd_path_docker),
+      shQuote(sd_path),  
+      shQuote(sd_path_docker), 
       shQuote(sd_path_docker),
       image_name,
       cmd
@@ -599,64 +586,71 @@ docker_run_mfcl2 <- function(
       list(output = NULL, error = e$message)
     })
     
-    return(list(
+    list(
+      sub_dir = sd,
       command = docker_cmd,
-      sub_dir = sd_path,
       output  = res$output,
       error   = res$error
-    ))
+    )
   }
   
-  # --------------------------------------------------------------------------
-  # No-volume (copy) approach (Windows) using `docker run -d tail -f /dev/null`
-  # --------------------------------------------------------------------------
-  run_single_command_no_mount <- function(sd, cmd) {
-    sd_path <- if (sd != "") file.path(project_dir, sd) else project_dir
+  # ----------------------------------------------------------------------------
+  # 3) Windows: one container per subdirectory (copy in/out to /jobs)
+  # ----------------------------------------------------------------------------
+  run_single_subdir_copy <- function(sd, cmd) {
+    sd_path <- if (nzchar(sd)) file.path(project_dir, sd) else project_dir
     
-    # 1) Start a background container that keeps running
-    #    We'll give it a random name so it doesn't clash
-    temp_name <- paste0("mfcl_", as.integer(Sys.time()))
-    run_cmd <- sprintf(
-      "docker run -d --name %s %s tail -f /dev/null",
-      temp_name, image_name
-    )
+    # Create unique container name
+    container_name <- paste0("mfcl_sub_", as.integer(Sys.time()), "_", sample(1000:9999, 1))
+    
+    # 1) Start container in background, so it stays running
+    run_cmd <- sprintf("docker run -d --name %s %s tail -f /dev/null", container_name, image_name)
+    if (verbose) cat("[Container start] ", run_cmd, "\n")
+    
     container_id <- tryCatch({
       system(run_cmd, intern = TRUE)
     }, error = function(e) e$message)
     
-    # 2) Copy local *contents* in (sub_dir/. → /jobs)
+    # 2) Copy subdirectory contents into /jobs
     copy_in_cmd <- sprintf(
       'docker cp "%s/." "%s:/jobs"',
-      sd_path, temp_name
+      sd_path, container_name
     )
+    if (verbose) cat("[Copy in] ", copy_in_cmd, "\n")
     system(copy_in_cmd, intern = FALSE)
     
-    # 3) Exec the user command
+    # 3) Exec the command
     if (!verbose) {
       c_log <- "/jobs/temp_output.log"
-      full_cmd <- sprintf('docker exec %s sh -c "cd /jobs && %s >> %s 2>&1"', 
-                          temp_name, cmd, c_log)
+      exec_cmd <- sprintf(
+        'docker exec %s sh -c "cd /jobs && %s >> %s 2>&1"',
+        container_name, cmd, c_log
+      )
     } else {
-      full_cmd <- sprintf('docker exec %s sh -c "cd /jobs && %s"', 
-                          temp_name, cmd)
+      exec_cmd <- sprintf(
+        'docker exec %s sh -c "cd /jobs && %s"',
+        container_name, cmd
+      )
     }
-    
+    if (verbose) cat("[Exec cmd] ", exec_cmd, "\n")
     result <- tryCatch({
-      system(full_cmd, intern = TRUE)
+      system(exec_cmd, intern = TRUE)
     }, error = function(e) e$message)
     
-    # 4) Copy results back ( /jobs/. → sub_dir )
+    # 4) Copy results back
     copy_out_cmd <- sprintf(
       'docker cp "%s:/jobs/." "%s"',
-      temp_name, sd_path
+      container_name, sd_path
     )
+    if (verbose) cat("[Copy out] ", copy_out_cmd, "\n")
     system(copy_out_cmd, intern = FALSE)
     
-    # 5) Remove the container (force kill if still running)
-    remove_cmd <- sprintf("docker rm -f %s", temp_name)
+    # 5) Remove container
+    remove_cmd <- sprintf("docker rm -f %s", container_name)
+    if (verbose) cat("[Remove container] ", remove_cmd, "\n\n")
     system(remove_cmd, intern = FALSE)
     
-    # 6) If logging is off, merge logs
+    # 6) If not verbose, append logs
     if (!verbose) {
       c_log_local <- file.path(sd_path, "temp_output.log")
       if (file.exists(c_log_local)) {
@@ -665,25 +659,28 @@ docker_run_mfcl2 <- function(
       }
     }
     
-    return(list(
+    list(
+      sub_dir = sd,
       command = cmd,
-      sub_dir = sd_path,
       output  = result,
       error   = NULL
-    ))
+    )
   }
   
-  # --------------------------------------------------------------------------
-  # Orchestrate parallel or sequential
-  # --------------------------------------------------------------------------
-  run_commands <- function(sub_dirs, commands) {
-    capture_output <- function(i) {
+  # ----------------------------------------------------------------------------
+  # 4) Orchestrate everything (parallel or sequential)
+  # ----------------------------------------------------------------------------
+  run_commands <- function() {
+    do_one <- function(i) {
       sd  <- sub_dirs[[i]]
       cmd <- commands[[i]]
+      
       if (.Platform$OS.type == "windows") {
-        run_single_command_no_mount(sd, cmd)
+        # Windows -> separate container per subdirectory, copy approach
+        run_single_subdir_copy(sd, cmd)
       } else {
-        run_single_command_volume(sd, cmd)
+        # Linux/macOS -> volume mount approach
+        run_single_subdir_volume(sd, cmd)
       }
     }
     
@@ -691,35 +688,35 @@ docker_run_mfcl2 <- function(
       if (.Platform$OS.type == "windows") {
         cl <- parallel::makeCluster(cores)
         on.exit(parallel::stopCluster(cl))
-        results <- parallel::parLapply(cl, seq_along(sub_dirs), capture_output)
+        results <- parallel::parLapply(cl, seq_along(sub_dirs), do_one)
       } else {
-        results <- parallel::mclapply(seq_along(sub_dirs), capture_output, mc.cores = cores)
+        results <- parallel::mclapply(seq_along(sub_dirs), do_one, mc.cores = cores)
       }
     } else {
-      results <- lapply(seq_along(sub_dirs), capture_output)
+      results <- lapply(seq_along(sub_dirs), do_one)
     }
-    return(results)
+    results
   }
   
-  # --------------------------------------------------------------------------
-  # Verbose preamble
-  # --------------------------------------------------------------------------
+  # ----------------------------------------------------------------------------
+  # 5) Print planned commands if verbose
+  # ----------------------------------------------------------------------------
   if (verbose) {
-    cat("docker_run_mfcl: about to execute the following commands:\n")
-    for (i in seq_along(commands)) {
+    cat("docker_run_mfcl: Will execute one command per subdirectory.\n\n")
+    for (i in seq_along(sub_dirs)) {
       cat(sprintf("  Subdirectory: '%s'\n", sub_dirs[[i]]))
       cat(sprintf("  Command:      %s\n\n", commands[[i]]))
     }
     if (.Platform$OS.type == "windows") {
-      cat("  => Using 'copy in/out' approach with 'docker run -d tail -f /dev/null' for Windows.\n\n")
+      cat("  => Windows: separate container per subdirectory (copy in/out to /jobs).\n\n")
     } else {
-      cat("  => Using volume mount approach for non-Windows.\n\n")
+      cat("  => Linux/macOS: volume mount approach.\n\n")
     }
   }
   
-  # --------------------------------------------------------------------------
-  # Execute
-  # --------------------------------------------------------------------------
-  results <- run_commands(sub_dirs, commands)
+  # ----------------------------------------------------------------------------
+  # 6) Execute & return results
+  # ----------------------------------------------------------------------------
+  results <- run_commands()
   return(results)
 }
