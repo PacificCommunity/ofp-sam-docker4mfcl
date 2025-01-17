@@ -262,7 +262,6 @@ docker_run_mfcl <- function(
   # Run commands sequentially or in parallel
   run_commands <- function(docker_cmds) {
     total_cmds <- length(docker_cmds)
-    pb <- utils::txtProgressBar(min = 0, max = total_cmds, style = 3) # Progress bar
     
     capture_output <- function(cmd_info, index) {
       cmd <- cmd_info$command
@@ -276,20 +275,18 @@ docker_run_mfcl <- function(
       # Capture output and error streams
       result <- tryCatch({
         output <- system(cmd, intern = TRUE)
-        output
+        list(output = output, error = NULL)
       }, error = function(e) {
-        paste("Error:", e$message)
+        list(output = NULL, error = e$message)
       })
-      
-      # Update progress bar
-      utils::setTxtProgressBar(pb, index)
       
       # Return detailed result
       return(list(
         command = cmd,
         sub_dir = sub_dir,
         index = index,
-        output = result
+        output = result$output,
+        error = result$error
       ))
     }
     
@@ -297,15 +294,8 @@ docker_run_mfcl <- function(
       if (parallel) {
         cl <- parallel::makeCluster(cores)
         on.exit(parallel::stopCluster(cl))
-        progress_env <- new.env()
-        progress_env$progress <- 0
-        parallel::clusterExport(cl, "progress_env", envir = environment())
-        parallel::clusterExport(cl, "capture_output", envir = environment())
         results <- parallel::parLapply(cl, seq_along(docker_cmds), function(i) {
-          res <- capture_output(docker_cmds[[i]], i)
-          progress_env$progress <- progress_env$progress + 1
-          utils::setTxtProgressBar(pb, progress_env$progress)
-          res
+          capture_output(docker_cmds[[i]], i)
         })
       } else {
         results <- lapply(seq_along(docker_cmds), function(i) {
@@ -314,13 +304,8 @@ docker_run_mfcl <- function(
       }
     } else {
       if (parallel) {
-        progress_env <- new.env()
-        progress_env$progress <- 0
         results <- parallel::mclapply(seq_along(docker_cmds), function(i) {
-          res <- capture_output(docker_cmds[[i]], i)
-          progress_env$progress <- progress_env$progress + 1
-          utils::setTxtProgressBar(pb, progress_env$progress)
-          res
+          capture_output(docker_cmds[[i]], i)
         }, mc.cores = cores)
       } else {
         results <- lapply(seq_along(docker_cmds), function(i) {
@@ -329,7 +314,6 @@ docker_run_mfcl <- function(
       }
     }
     
-    close(pb) # Close progress bar
     return(results)
   }
   
