@@ -8,6 +8,8 @@
 #'
 #' @examples
 #' docker_build(image_name = "my_image", version = "1.0")
+#'
+#' @export
 
 docker_build <- function(image_name = "default_image", version = "latest", build_context = ".") {
   # Combine image name and version

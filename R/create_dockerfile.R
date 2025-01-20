@@ -10,6 +10,8 @@
 #'
 #' @examples
 #' create_dockerfile(r_version = "4.2.3", r_packages = c("ggplot2", "dplyr"), github_packages = c("hadley/devtools"))
+#'
+#' @export
 
 create_dockerfile <- function(
     r_version = "latest", # Default to the latest R version

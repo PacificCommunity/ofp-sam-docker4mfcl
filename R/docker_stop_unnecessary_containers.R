@@ -7,6 +7,8 @@
 #' @examples
 #' docker_stop_unnecessary_containers()
 #' docker_stop_unnecessary_containers(image_name = "my_image")
+#'
+#' @export
 
 docker_stop_unnecessary_containers <- function(image_name = NULL) {
   containers <- docker_list_running_containers()

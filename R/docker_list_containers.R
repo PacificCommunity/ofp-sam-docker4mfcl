@@ -9,6 +9,8 @@
 #' @examples
 #' docker_list_containers()
 #' docker_list_containers(all = TRUE)
+#'
+#' @export
 
 docker_list_containers <- function(all = FALSE) {
   flag <- if (all) "-a" else ""

@@ -16,4 +16,5 @@ This function pulls a Docker image from Docker Hub
 }
 \examples{
 docker_pull("my_image", "1.0")
+
 }

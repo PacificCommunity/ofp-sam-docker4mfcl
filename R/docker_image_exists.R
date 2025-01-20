@@ -9,6 +9,8 @@
 #'
 #' @examples
 #' docker_image_exists("my_image", "1.0")
+#'
+#' @export
 
 docker_image_exists <- function(image_name, version = "latest") {
   full_image_name <- sprintf("%s:%s", image_name, version)

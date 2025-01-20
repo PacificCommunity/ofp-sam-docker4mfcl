@@ -6,6 +6,8 @@
 #'
 #' @examples
 #' docker_list_images()
+#'
+#' @export
 
 docker_list_images <- function() {
   command <- "docker images --format '{{.Repository}}:{{.Tag}}'"

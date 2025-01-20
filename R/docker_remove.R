@@ -7,6 +7,8 @@
 #'
 #' @examples
 #' docker_remove("my_image", "1.0")
+#'
+#' @export
 
 docker_remove <- function(image_name, version = "latest") {
   if (docker_image_exists(image_name, version)) {

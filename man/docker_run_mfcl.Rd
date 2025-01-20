@@ -40,4 +40,5 @@ This function runs MFCL-related commands inside a Docker container.
 }
 \examples{
 docker_run_mfcl(image_name = "mfcl_image", commands = "./mfclo64 input_file.frq")
+
 }

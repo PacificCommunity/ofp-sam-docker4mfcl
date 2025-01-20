@@ -9,6 +9,8 @@
 #'
 #' @examples
 #' docker_push("my_image", "my_image", "my_username", "1.0")
+#'
+#' @export
 
 docker_push <- function(local_image, remote_image, username, tag = "latest") {
   # Combine image name and tag

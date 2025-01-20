@@ -16,4 +16,5 @@ This function removes a Docker image with the specified name and version if it e
 }
 \examples{
 docker_remove("my_image", "1.0")
+
 }

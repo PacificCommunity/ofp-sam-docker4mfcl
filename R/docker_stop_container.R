@@ -6,6 +6,8 @@
 #'
 #' @examples
 #' docker_stop_container("my_container")
+#'
+#' @export
 
 docker_stop_container <- function(container_id_or_name) {
   command <- sprintf("docker stop %s", container_id_or_name)

@@ -6,6 +6,8 @@
 #'
 #' @examples
 #' docker_list_running_containers()
+#'
+#' @export
 
 docker_list_running_containers <- function() {
   command <- "docker ps --format '{{.ID}} {{.Image}} {{.Names}}'"

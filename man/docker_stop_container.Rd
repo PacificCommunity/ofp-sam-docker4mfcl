@@ -14,4 +14,5 @@ This function stops a specific Docker container by its ID or name.
 }
 \examples{
 docker_stop_container("my_container")
+
 }

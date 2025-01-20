@@ -4,6 +4,8 @@
 #'
 #' @examples
 #' docker_prune()
+#'
+#' @export
 
 docker_prune <- function() {
   cat("Stopping all running containers...\n")

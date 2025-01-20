@@ -7,6 +7,8 @@
 #'
 #' @examples
 #' docker_pull("my_image", "1.0")
+#'
+#' @export
 
 docker_pull <- function(image_name, version = "latest") {
   # Combine image name and version

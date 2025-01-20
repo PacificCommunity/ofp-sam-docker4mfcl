@@ -15,4 +15,5 @@ This function stops all running Docker containers or filters by a specific image
 \examples{
 docker_stop_unnecessary_containers()
 docker_stop_unnecessary_containers(image_name = "my_image")
+
 }

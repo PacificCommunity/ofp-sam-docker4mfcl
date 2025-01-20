@@ -18,4 +18,5 @@ This function lists all available Docker containers. Optionally, it can include 
 \examples{
 docker_list_containers()
 docker_list_containers(all = TRUE)
+
 }

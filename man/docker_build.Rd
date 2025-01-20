@@ -22,4 +22,5 @@ This function builds a Docker image with the specified name and version.
 }
 \examples{
 docker_build(image_name = "my_image", version = "1.0")
+
 }

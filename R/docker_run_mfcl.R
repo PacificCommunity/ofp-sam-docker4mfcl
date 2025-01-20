@@ -15,6 +15,8 @@
 #'
 #' @examples
 #' docker_run_mfcl(image_name = "mfcl_image", commands = "./mfclo64 input_file.frq")
+#'
+#' @export
 
 docker_run_mfcl <- function(
     image_name,            # Docker image name

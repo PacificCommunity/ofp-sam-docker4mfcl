@@ -14,4 +14,5 @@ This function lists all available Docker images.
 }
 \examples{
 docker_list_images()
+
 }

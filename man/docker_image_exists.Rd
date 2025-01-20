@@ -19,4 +19,5 @@ This function checks whether a Docker image with the specified name and version 
 }
 \examples{
 docker_image_exists("my_image", "1.0")
+
 }

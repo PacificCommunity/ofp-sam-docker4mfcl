@@ -11,4 +11,5 @@ This function stops all running containers, removes all containers, and prunes u
 }
 \examples{
 docker_prune()
+
 }
