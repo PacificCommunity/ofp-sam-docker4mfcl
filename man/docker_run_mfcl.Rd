@@ -2,7 +2,7 @@
 % Please edit documentation in R/docker_run_mfcl.R
 \name{docker_run_mfcl}
 \alias{docker_run_mfcl}
-\title{Run MFCL commands in Docker}
+\title{Run Commands in Docker or Condor Mode}
 \usage{
 docker_run_mfcl(
   image_name,
@@ -12,33 +12,38 @@ docker_run_mfcl(
   parallel = FALSE,
   cores = parallel::detectCores() - 1,
   verbose = TRUE,
-  log_file = NULL
+  log_file = NULL,
+  condor_mode = FALSE
 )
 }
 \arguments{
-\item{image_name}{The name of the Docker image.}
+\item{image_name}{Name of the Docker image (ignored in Condor mode).}
 
-\item{commands}{A vector of command(s) to execute inside the container.}
+\item{commands}{A vector of command(s) to execute.}
 
-\item{project_dir}{The base project directory to mount. Defaults to the current working directory.}
+\item{project_dir}{Base project directory to mount or work in. Defaults to the current working directory.}
 
 \item{sub_dirs}{A list of subdirectories for execution. Defaults to NULL (only the base directory).}
 
 \item{parallel}{Whether to enable parallel execution. Defaults to FALSE.}
 
-\item{cores}{The number of cores to use for parallel execution. Defaults to all available cores minus one.}
+\item{cores}{Number of cores for parallel execution. Defaults to all available cores minus one.}
 
 \item{verbose}{Whether to print the executed commands. Defaults to TRUE.}
 
-\item{log_file}{The log file to save the output. Defaults to NULL (no log file).}
+\item{log_file}{Path to a log file for output. Defaults to NULL (no log file).}
+
+\item{condor_mode}{Logical. If TRUE, run commands locally (Condor mode) rather than inside Docker.}
 }
 \value{
-A list of results from the executed commands.
+A list containing the results of the executed commands.
 }
 \description{
-This function runs MFCL-related commands inside a Docker container.
+This function executes commands either inside Docker containers or directly in Condor mode.
+It supports execution across multiple subdirectories, with options for parallel processing.
 }
 \examples{
 docker_run_mfcl(image_name = "mfcl_image", commands = "./mfclo64 input_file.frq")
+docker_run_mfcl(image_name = "mfcl_image", commands = "./mfclo64 input_file.frq", condor_mode = TRUE)
 
 }
