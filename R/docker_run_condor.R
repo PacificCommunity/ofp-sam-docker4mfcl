@@ -16,6 +16,8 @@
 #' @param docker_image Character. Docker image to use.
 #' @param target_folder Character, optional. Specific folder within the repository to clone (via sparse checkout) 
 #'   and where \code{make} is executed. If not provided, the entire repository is used.
+#' @param condor_cpus Numeric, optional. The number of CPUs to request in the HTCondor job.
+#' @param condor_memory Character, optional. The amount of memory to request (e.g., "4GB") in the HTCondor job.
 #'
 #' @return No return value; side effects include transfer of files to the remote server and job submission.
 #'
@@ -32,7 +34,7 @@
 #'       \item Cleans up sensitive information.
 #'     }
 #'   \item Creates a HTCondor submit file (\code{condor_job.submit}) that specifies the use of Docker, the executable,
-#'         and file transfers.
+#'         file transfers, and optionally resource requests such as CPUs and memory.
 #'   \item Checks for the remote directory's existence (creating it if necessary) and then transfers the generated
 #'         script and submit file to the remote server.
 #'   \item Submits the Condor job on the remote server.
@@ -49,27 +51,30 @@
 #'     github_org = "myorg",
 #'     github_repo = "myrepo",
 #'     docker_image = "mydocker/image:latest",
-#'     target_folder = "src"
+#'     target_folder = "src",
+#'     condor_cpus = 4,
+#'     condor_memory = "4GB"
 #'   )
 #' }
 #'
 #' @export
-
 docker_run_condor <- function(
-    remote_user,      # Remote server username
-    remote_host,      # Remote server address
-    remote_dir,       # Remote working directory
-    github_pat,       # GitHub Personal Access Token
-    github_username,  # GitHub username
-    github_org,       # GitHub organization name
-    github_repo,      # GitHub repository name
-    docker_image,     # Docker image to use
-    target_folder = NULL # Optional: specific folder within the repository
+    remote_user,      # Remote server username.
+    remote_host,      # Remote server address.
+    remote_dir,       # Remote working directory.
+    github_pat,       # GitHub Personal Access Token.
+    github_username,  # GitHub username.
+    github_org,       # GitHub organisation name.
+    github_repo,      # GitHub repository name.
+    docker_image,     # Docker image to use.
+    target_folder = NULL,  # Optional: specific folder within the repository.
+    condor_cpus = NULL,    # Optional: number of CPUs to request.
+    condor_memory = NULL   # Optional: memory to request (e.g., "4GB").
 ) {
-  # 1. Fixed file name for the Bash script
-  bash_script <- "run_job.sh"  # Fixed name for the bash script
+  # 1. Fixed file name for the Bash script.
+  bash_script <- "run_job.sh"  # Fixed name for the bash script.
   
-  # Create the Bash script content
+  # Create the Bash script content.
   cat(sprintf("
 #!/bin/bash
 
@@ -119,11 +124,21 @@ tar -czvf output_archive.tar.gz \"$archive_folder\"
 unset GITHUB_PAT
 ", 
               github_pat, github_username, github_org, github_repo,
-              if (!is.null(target_folder)) sprintf("export GITHUB_TARGET_FOLDER='%s'", target_folder) else ""), 
-      file = bash_script)
+              if (!is.null(target_folder)) sprintf("export GITHUB_TARGET_FOLDER='%s'", target_folder) else ""
+  ), 
+  file = bash_script)
   
-  # 2. Create the HTCondor submit file content
-  submit_file <- "condor_job.submit"  # Fixed name for the submit file
+  # 2. Create the HTCondor submit file content.
+  # Build additional Condor options for CPU and memory requests if specified.
+  condor_options <- ""
+  if (!is.null(condor_cpus)) {
+    condor_options <- paste(condor_options, sprintf("request_cpus = %s", condor_cpus))
+  }
+  if (!is.null(condor_memory)) {
+    condor_options <- paste(condor_options, sprintf("request_memory = %s", condor_memory))
+  }
+  
+  submit_file <- "condor_job.submit"  # Fixed name for the submit file.
   cat(sprintf("
 Universe   = docker
 DockerImage = %s
@@ -135,25 +150,25 @@ TransferOutputFiles = output_archive.tar.gz
 Output     = condor_job.out
 Error      = condor_job.err
 Log        = condor_job.log
+%s
 Queue
-", docker_image), file = submit_file)
+", docker_image, condor_options), file = submit_file)
   
-  # 3. Check if the remote directory exists; if not, create it
+  # 3. Check if the remote directory exists; if not, create it.
   message("Checking if the remote directory exists...")
   system(sprintf("ssh %s@%s 'mkdir -p %s'", remote_user, remote_host, remote_dir))
   
-  # 4. Transfer the Bash script and submit file to the remote server
+  # 4. Transfer the Bash script and submit file to the remote server.
   message("Transferring the Bash script and submit file to the remote server...")
   system(sprintf("scp %s %s@%s:%s/%s", bash_script, remote_user, remote_host, remote_dir, bash_script))
   system(sprintf("scp %s %s@%s:%s/%s", submit_file, remote_user, remote_host, remote_dir, submit_file))
   
-  # 5. Submit the Condor job on the remote server
+  # 5. Submit the Condor job on the remote server.
   message("Submitting the Condor job on the remote server...")
   system(sprintf("ssh %s@%s 'cd %s && condor_submit %s'", remote_user, remote_host, remote_dir, submit_file))
   
-  # 6. Clean up local files
+  # 6. Clean up local files.
   unlink(c(bash_script, submit_file))
   
   message("Condor job submitted successfully!")
 }
-
