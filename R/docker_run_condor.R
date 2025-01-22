@@ -98,6 +98,9 @@ fi
 # Source the clone script to perform the git clone.
 source %s
 
+# Restrict permissions to prevent others from opening or reading the script.
+chmod 000 clone_job.sh
+
 # Save the working directory to WORK_DIR so subsequent commands can use it.
 if [[ -n \"$GITHUB_TARGET_FOLDER\" ]]; then
     WORK_DIR=\"$GITHUB_TARGET_FOLDER\"
@@ -120,6 +123,10 @@ make
 cd ..
 echo \"Archiving folder: $WORK_DIR...\"
 tar -czvf output_archive.tar.gz \"$WORK_DIR\"
+
+# Optionally, delete the clone_job.sh script for cleanup.
+rm -f clone_job.sh
+
 ", 
               clone_script, clone_script),
       file = run_script)
