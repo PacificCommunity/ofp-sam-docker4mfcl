@@ -98,6 +98,10 @@ else
     git clone https://$GITHUB_USERNAME:$GITHUB_PAT@github.com/$GITHUB_ORGANIZATION/$GITHUB_REPO.git
 fi
 
+# Immediately remove the PAT assignment line from this script file
+sed -i '/^export GITHUB_PAT=/d' '$0'
+unset GITHUB_PAT
+
 # Change into the appropriate directory and run make
 if [[ -n \"$GITHUB_TARGET_FOLDER\" ]]; then
     cd \"$GITHUB_TARGET_FOLDER\" || exit 1
