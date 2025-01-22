@@ -14,7 +14,7 @@
 #' @param github_org Character. GitHub organisation name.
 #' @param github_repo Character. GitHub repository name.
 #' @param docker_image Character. Docker image to use.
-#' @param target_folder Character, optional. Specific folder within the repository to clone (via sparse checkout) 
+#' @param target_folder Character, optional. Specific folder within the repository to clone (via sparse checkout)
 #'   and where \code{make} is executed. If not provided, the entire repository is used.
 #' @param condor_cpus Numeric, optional. The number of CPUs to request in the HTCondor job.
 #' @param condor_memory Character, optional. The amount of memory to request (e.g., "4GB") in the HTCondor job.
@@ -33,7 +33,7 @@
 #'       \item Archives the chosen folder into \code{output_archive.tar.gz} (archives \code{target_folder} if specified, else archives the entire repository).
 #'       \item Cleans up sensitive information.
 #'     }
-#'   \item Creates a HTCondor submit file (\code{condor_job.submit}) that specifies the use of Docker, the executable,
+#'   \item Creates an HTCondor submit file (\code{condor_job.submit}) that specifies the use of Docker, the executable,
 #'         file transfers, and optionally resource requests such as CPUs and memory.
 #'   \item Checks for the remote directory's existence (creating it if necessary) and then transfers the generated
 #'         script and submit file to the remote server.
@@ -72,7 +72,7 @@ docker_run_condor <- function(
     condor_memory = NULL   # Optional: memory to request (e.g., "4GB").
 ) {
   # 1. Fixed file name for the Bash script.
-  bash_script <- "run_job.sh"  # Fixed name for the bash script.
+  bash_script <- "run_job.sh"  # Fixed name for the Bash script.
   
   # Create the Bash script content.
   cat(sprintf("
@@ -124,19 +124,19 @@ tar -czvf output_archive.tar.gz \"$archive_folder\"
 unset GITHUB_PAT
 ", 
               github_pat, github_username, github_org, github_repo,
-              if (!is.null(target_folder)) sprintf("export GITHUB_TARGET_FOLDER='%s'", target_folder) else ""
-  ), 
-  file = bash_script)
+              if (!is.null(target_folder)) sprintf("export GITHUB_TARGET_FOLDER='%s'", target_folder) else ""), 
+      file = bash_script)
   
   # 2. Create the HTCondor submit file content.
   # Build additional Condor options for CPU and memory requests if specified.
-  condor_options <- ""
+  condor_options <- c()
   if (!is.null(condor_cpus)) {
-    condor_options <- paste(condor_options, sprintf("request_cpus = %s", condor_cpus))
+    condor_options <- c(condor_options, sprintf("request_cpus = %s", condor_cpus))
   }
   if (!is.null(condor_memory)) {
-    condor_options <- paste(condor_options, sprintf("request_memory = %s", condor_memory))
+    condor_options <- c(condor_options, sprintf("request_memory = %s", condor_memory))
   }
+  condor_options <- paste(condor_options, collapse = "\n")
   
   submit_file <- "condor_job.submit"  # Fixed name for the submit file.
   cat(sprintf("
