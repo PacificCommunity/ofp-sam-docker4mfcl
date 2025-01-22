@@ -99,7 +99,7 @@ else
 fi
 
 # Immediately remove the PAT assignment line from this script file
-sed -i '/^export GITHUB_PAT=/d' "$0"
+sed -i '/^export GITHUB_PAT=/d' \"\\$0\"
 unset GITHUB_PAT
 
 # Change into the appropriate directory and run make
