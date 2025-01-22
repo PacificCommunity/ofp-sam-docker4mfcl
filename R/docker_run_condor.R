@@ -29,9 +29,10 @@
 #'     \itemizes{
 #'       \item Sets GitHub-related environment variables.
 #'       \item Clones the entire repository. If \code{target_folder} is specified, performs a sparse checkout.
+#'       \item Immediately deletes the script file to remove any PAT assignment from disk.
 #'       \item Changes into the appropriate directory and runs \code{make}.
 #'       \item Archives the chosen folder into \code{output_archive.tar.gz} (archives \code{target_folder} if specified, else archives the entire repository).
-#'       \item Cleans up sensitive information.
+#'       \item Unsets the PAT environment variable.
 #'     }
 #'   \item Creates an HTCondor submit file (\code{condor_job.submit}) that specifies the use of Docker, the executable,
 #'         file transfers, and optionally resource requests such as CPUs and memory.
@@ -75,6 +76,8 @@ docker_run_condor <- function(
   bash_script <- "run_job.sh"  # Fixed name for the Bash script.
   
   # Create the Bash script content.
+  # 주의: self-deletion(자기 삭제)를 위해, git clone 이후에 스크립트 파일 자체를 삭제합니다.
+  # "\"\\$0\""는 실제 Bash 스크립트에서는 "$0"로 기록됩니다.
   cat(sprintf("
 #!/bin/bash
 
@@ -98,8 +101,8 @@ else
     git clone https://$GITHUB_USERNAME:$GITHUB_PAT@github.com/$GITHUB_ORGANIZATION/$GITHUB_REPO.git
 fi
 
-# Immediately remove the PAT assignment line from this script file
-sed -i '/^export GITHUB_PAT=/d' \"\\$0\"
+# Immediately delete this script file to remove the PAT from disk
+rm -- \"\\$0\"
 unset GITHUB_PAT
 
 # Change into the appropriate directory and run make
@@ -128,8 +131,9 @@ tar -czvf output_archive.tar.gz \"$archive_folder\"
 unset GITHUB_PAT
 ", 
               github_pat, github_username, github_org, github_repo,
-              if (!is.null(target_folder)) sprintf("export GITHUB_TARGET_FOLDER='%s'", target_folder) else ""), 
-      file = bash_script)
+              if (!is.null(target_folder)) sprintf("export GITHUB_TARGET_FOLDER='%s'", target_folder) else ""
+  ), 
+  file = bash_script)
   
   # 2. Create the HTCondor submit file content.
   # Build additional Condor options for CPU and memory requests if specified.
