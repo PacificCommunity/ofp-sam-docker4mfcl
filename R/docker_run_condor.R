@@ -1,12 +1,12 @@
 #' Run MFCL Job via HTCondor and Docker with Separate Clone and Run Scripts
 #'
 #' This function creates two Bash script files. The first script, \code{clone_job.sh},
-#' is responsible for cloning a GitHub repository (or a specific folder via sparse checkout)
-#' using the provided GitHub Personal Access Token (PAT). The second script, \code{run_job.sh},
-#' sources the clone script to perform the clone operation, stores the working directory in a variable,
-#' immediately deletes the clone script to remove sensitive PAT information from disk, and then executes
-#' the remaining commands (running \code{make} and archiving the appropriate folder). An HTCondor submit
-#' file is also generated and transferred to a remote server for job submission.
+#' handles cloning a GitHub repository (or a specific folder via sparse checkout) using the provided
+#' GitHub Personal Access Token (PAT). The second script, \code{run_job.sh}, sources the clone script
+#' to perform the clone, stores the working directory in a variable, schedules the deletion of the clone
+#' script (to remove sensitive PAT information from disk), and then executes the remaining commands
+#' (running \code{make} and archiving the appropriate folder). An HTCondor submit file is also generated
+#' and transferred to a remote server for job submission.
 #'
 #' @param remote_user Character. Remote server username.
 #' @param remote_host Character. Remote server address.
@@ -16,7 +16,7 @@
 #' @param github_org Character. GitHub organisation name.
 #' @param github_repo Character. GitHub repository name.
 #' @param docker_image Character. Docker image to use.
-#' @param target_folder Character, optional. Specific folder within the repository to clone via sparse checkout
+#' @param target_folder Character, optional. Specific folder within the repository to clone (via sparse checkout)
 #'   and where \code{make} is executed. If not provided, the entire repository is used.
 #' @param condor_cpus Numeric, optional. The number of CPUs to request in the HTCondor job.
 #' @param condor_memory Character, optional. The amount of memory to request (e.g., "4GB") in the HTCondor job.
@@ -60,8 +60,6 @@ docker_run_condor <- function(
   run_script <- "run_job.sh"
   
   # 1. Create the clone_job.sh script.
-  # This script performs the git clone (or sparse checkout) using the provided PAT.
-  # It will later be sourced by run_job.sh.
   cat(sprintf("
 #!/bin/bash
 
@@ -84,30 +82,31 @@ else
     echo \"Cloning the entire repository...\"
     git clone https://$GITHUB_USERNAME:$GITHUB_PAT@github.com/$GITHUB_ORGANIZATION/$GITHUB_REPO.git
 fi
-",
+", 
               github_pat, github_username, github_org, github_repo,
               if (!is.null(target_folder)) sprintf("export GITHUB_TARGET_FOLDER='%s'", target_folder) else ""
   ),
   file = clone_script)
   
   # 2. Create the run_job.sh script.
-  # This script sources clone_job.sh, saves the working directory into WORK_DIR,
-  # deletes the clone script, unsets the PAT, and then continues with make and archiving.
+  # This script sources the clone script, saves the working directory in WORK_DIR,
+  # schedules deletion of the clone script (with a delay) to remove the PAT from disk,
+  # and then continues with make and archiving.
   cat(sprintf("
 #!/bin/bash
 
 # Source the clone script to perform the git clone.
 source %s
 
-# Save the working directory to WORK_DIR so that subsequent commands work even after clone_job.sh is deleted.
+# Save the working directory to WORK_DIR so subsequent commands can use it.
 if [[ -n \"$GITHUB_TARGET_FOLDER\" ]]; then
     WORK_DIR=\"$GITHUB_TARGET_FOLDER\"
 else
     WORK_DIR=\"$GITHUB_REPO\"
 fi
 
-# Immediately delete the clone script to remove the PAT from disk.
-rm -f \"$(realpath clone_job.sh)\" 
+# Schedule deletion of the clone script in the background (wait 1 second before deleting).
+( sleep 1; rm -f \"$(realpath %s)\" ) &
 
 # Unset the GitHub PAT.
 unset GITHUB_PAT
@@ -126,7 +125,6 @@ tar -czvf output_archive.tar.gz \"$WORK_DIR\"
       file = run_script)
   
   # 3. Create the HTCondor submit file content.
-  # Build additional Condor options for CPU and memory requests if specified.
   condor_options <- c()
   if (!is.null(condor_cpus)) {
     condor_options <- c(condor_options, sprintf("request_cpus = %s", condor_cpus))
