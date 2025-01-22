@@ -13,7 +13,9 @@ docker_run_condor(
   github_org,
   github_repo,
   docker_image,
-  target_folder = NULL
+  target_folder = NULL,
+  condor_cpus = NULL,
+  condor_memory = NULL
 )
 }
 \arguments{
@@ -35,6 +37,10 @@ docker_run_condor(
 
 \item{target_folder}{Character, optional. Specific folder within the repository to clone (via sparse checkout) 
 and where \code{make} is executed. If not provided, the entire repository is used.}
+
+\item{condor_cpus}{Numeric, optional. The number of CPUs to request in the HTCondor job.}
+
+\item{condor_memory}{Character, optional. The amount of memory to request (e.g., "4GB") in the HTCondor job.}
 }
 \value{
 No return value; side effects include transfer of files to the remote server and job submission.
@@ -59,7 +65,7 @@ The function performs the following steps:
       \item Cleans up sensitive information.
     }
   \item Creates a HTCondor submit file (\code{condor_job.submit}) that specifies the use of Docker, the executable,
-        and file transfers.
+        file transfers, and optionally resource requests such as CPUs and memory.
   \item Checks for the remote directory's existence (creating it if necessary) and then transfers the generated
         script and submit file to the remote server.
   \item Submits the Condor job on the remote server.
@@ -76,7 +82,9 @@ The function performs the following steps:
     github_org = "myorg",
     github_repo = "myrepo",
     docker_image = "mydocker/image:latest",
-    target_folder = "src"
+    target_folder = "src",
+    condor_cpus = 4,
+    condor_memory = "4GB"
   )
 }
 
