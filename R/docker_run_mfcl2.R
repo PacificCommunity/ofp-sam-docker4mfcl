@@ -57,7 +57,42 @@ docker_run_mfcl2 <- function(
   }
   
   # ------------------------------------------------------------------
-  # 2) Linux/macOS approach: volume mount (with optional Docker socket mount)
+  # 2) Determine execution mode: Docker or local (Condor)
+  # ------------------------------------------------------------------
+  condor_mode <- nzchar(Sys.getenv("CONDOR_JOB_ID"))
+  
+  # ------------------------------------------------------------------
+  # 3) Define local execution function (for Condor mode)
+  # ------------------------------------------------------------------
+  run_single_subdir_local <- function(sd, cmd) {
+    sd_path <- if (nzchar(sd)) file.path(project_dir, sd) else project_dir
+    old_wd <- getwd()
+    on.exit(setwd(old_wd), add = TRUE)
+    setwd(sd_path)
+    
+    full_cmd <- cmd
+    if (!verbose && !is.null(log_file)) {
+      full_cmd <- sprintf("%s >> %s 2>&1", full_cmd, shQuote(log_file))
+    }
+    
+    if (verbose) cat(sprintf("[Local Exec in %s] %s\n", sd_path, full_cmd))
+    res <- tryCatch({
+      out <- system(full_cmd, intern = TRUE)
+      list(output = out, error = NULL)
+    }, error = function(e) {
+      list(output = NULL, error = e$message)
+    })
+    
+    list(
+      sub_dir = sd,
+      command = full_cmd,
+      output  = res$output,
+      error   = res$error
+    )
+  }
+  
+  # ------------------------------------------------------------------
+  # 4) Docker execution on Linux/macOS: volume mount (with optional Docker socket mount)
   # ------------------------------------------------------------------
   convert_path_for_docker <- function(path) {
     normalizePath(path)
@@ -67,7 +102,7 @@ docker_run_mfcl2 <- function(
     sd_path <- if (nzchar(sd)) file.path(project_dir, sd) else project_dir
     sd_path_docker <- convert_path_for_docker(sd_path)
     
-    # Check if the host's Docker socket exists; if so, mount it to avoid Docker-in-Docker issues.
+    # Check if the host's Docker socket exists; if so, mount it.
     docker_socket <- "/var/run/docker.sock"
     if (file.exists(docker_socket)) {
       socket_mount <- sprintf("-v %s:%s", shQuote(docker_socket), shQuote(docker_socket))
@@ -77,17 +112,19 @@ docker_run_mfcl2 <- function(
     
     docker_cmd <- sprintf(
       "docker run --rm -v %s:%s %s -w %s %s %s",
-      shQuote(sd_path),              # mount the host directory
-      shQuote(sd_path_docker),       # to the same path in container
-      socket_mount,                  # optionally mount docker socket if available
-      shQuote(sd_path_docker),       # set working directory
-      image_name,                    # use specified image
-      cmd                            # command to execute
+      shQuote(sd_path),
+      shQuote(sd_path_docker),
+      socket_mount,
+      shQuote(sd_path_docker),
+      image_name,
+      cmd
     )
     
     if (!verbose) {
       docker_cmd <- sprintf("%s >> %s 2>&1", docker_cmd, shQuote(log_file))
     }
+    
+    if (verbose) cat("[Docker Exec] ", docker_cmd, "\n")
     
     res <- tryCatch({
       out <- system(docker_cmd, intern = TRUE)
@@ -105,31 +142,29 @@ docker_run_mfcl2 <- function(
   }
   
   # ------------------------------------------------------------------
-  # 3) Windows approach: short local path + copy approach
-  #
-  #    => Creates one container per subdirectory, then removes it.
+  # 5) Windows approach: short local path + copy approach (unchanged)
   # ------------------------------------------------------------------
   run_single_subdir_copy_win <- function(sd, cmd) {
     sd_path <- if (nzchar(sd)) file.path(project_dir, sd) else project_dir
     
-    # 3a) Create a short local base
+    # 5a) Create a short local base
     short_base <- "C:/mfcl_temp"
     if (!dir.exists(short_base)) {
       dir.create(short_base, showWarnings = FALSE, recursive = TRUE)
     }
     
-    # 3b) Make a unique subfolder inside short_base
+    # 5b) Make a unique subfolder inside short_base
     sub_temp <- file.path(short_base, paste0("subdir_", as.integer(Sys.time()), "_", sample(1000:9999, 1)))
     dir.create(sub_temp, recursive = TRUE, showWarnings = FALSE)
     
-    # 3c) Copy *contents* of the real sub_dir to sub_temp
+    # 5c) Copy contents of the real sub_dir to sub_temp
     copy_in <- function(from, to) {
       files <- list.files(from, all.files = TRUE, full.names = TRUE, no.. = TRUE)
       if (length(files) > 0) file.copy(files, to, recursive = TRUE)
     }
     copy_in(sd_path, sub_temp)
     
-    # 3d) Start container
+    # 5d) Start container
     container_name <- paste0("mfcl_sub_", as.integer(Sys.time()), "_", sample(1000:9999, 1))
     run_cmd <- sprintf("docker run -d --name %s %s tail -f /dev/null", container_name, image_name)
     if (verbose) cat("[Start container] ", run_cmd, "\n")
@@ -138,12 +173,12 @@ docker_run_mfcl2 <- function(
       system(run_cmd, intern = TRUE)
     }, error = function(e) e$message)
     
-    # 3e) Docker cp from sub_temp => container:/jobs
+    # 5e) Copy sub_temp contents into container's /jobs
     copy_in_cmd <- sprintf('docker cp "%s/." "%s:/jobs"', sub_temp, container_name)
     if (verbose) cat("[Copy to container] ", copy_in_cmd, "\n")
     system(copy_in_cmd, intern = FALSE)
     
-    # 3f) Run command inside /jobs
+    # 5f) Run command inside container in /jobs
     if (!verbose) {
       c_log <- "/jobs/temp_output.log"
       exec_cmd <- sprintf('docker exec %s sh -c "cd /jobs && %s >> %s 2>&1"', container_name, cmd, c_log)
@@ -156,17 +191,17 @@ docker_run_mfcl2 <- function(
       system(exec_cmd, intern = TRUE)
     }, error = function(e) e$message)
     
-    # 3g) Copy results back from container:/jobs => sub_temp
+    # 5g) Copy results back from container:/jobs to sub_temp
     copy_out_cmd <- sprintf('docker cp "%s:/jobs/." "%s"', container_name, sub_temp)
     if (verbose) cat("[Copy from container] ", copy_out_cmd, "\n")
     system(copy_out_cmd, intern = FALSE)
     
-    # 3h) Remove the container right away
+    # 5h) Remove container
     remove_cmd <- sprintf("docker rm -f %s", container_name)
     if (verbose) cat("[Remove container] ", remove_cmd, "\n\n")
     system(remove_cmd, intern = FALSE)
     
-    # 3i) If not verbose, merge logs
+    # 5i) Merge logs if not verbose
     if (!verbose) {
       c_log_local <- file.path(sub_temp, "temp_output.log")
       if (file.exists(c_log_local)) {
@@ -175,10 +210,10 @@ docker_run_mfcl2 <- function(
       }
     }
     
-    # 3j) Copy updated results from sub_temp => original subdirectory
+    # 5j) Copy updated results from sub_temp back to the original subdirectory
     copy_in(sub_temp, sd_path)
     
-    # 3k) Clean up short local folder
+    # 5k) Clean up short local folder
     unlink(sub_temp, recursive = TRUE, force = TRUE)
     
     list(
@@ -190,17 +225,20 @@ docker_run_mfcl2 <- function(
   }
   
   # ------------------------------------------------------------------
-  # 4) Orchestrate (parallel or sequential)
+  # 6) Orchestrate (parallel or sequential)
   # ------------------------------------------------------------------
   run_commands <- function() {
     do_one <- function(i) {
       sd  <- sub_dirs[[i]]
       cmd <- commands[[i]]
-      if (.Platform$OS.type == "windows") {
-        # Use the short-path approach (one container per subdir)
+      if (condor_mode) {
+        # In Condor mode, run commands locally (no docker)
+        run_single_subdir_local(sd, cmd)
+      } else if (.Platform$OS.type == "windows") {
+        # Use Windows approach (copy approach)
         run_single_subdir_copy_win(sd, cmd)
       } else {
-        # Use the volume mount approach with optional docker socket mount
+        # Use Docker approach with volume mount and optional docker socket mount
         run_single_subdir_volume(sd, cmd)
       }
     }
@@ -220,25 +258,29 @@ docker_run_mfcl2 <- function(
   }
   
   # ------------------------------------------------------------------
-  # 5) Verbose summary
+  # 7) Verbose summary
   # ------------------------------------------------------------------
   if (verbose) {
-    cat("docker_run_mfcl2: Executing commands in subdirectories.\n")
+    if (condor_mode) {
+      cat("docker_run_mfcl2 (Condor mode): Executing commands locally in subdirectories.\n")
+    } else {
+      cat("docker_run_mfcl2: Executing commands in subdirectories.\n")
+    }
     for (i in seq_along(sub_dirs)) {
       cat(sprintf("  Subdirectory: %s\n", sub_dirs[[i]]))
       cat(sprintf("  Command:      %s\n\n", commands[[i]]))
     }
-    if (.Platform$OS.type == "windows") {
+    if (!condor_mode && .Platform$OS.type == "windows") {
       cat("  => Windows: using separate containers per subdirectory.\n",
           "     (Short local path 'C:/mfcl_temp' to avoid path-too-long.)\n",
           "     Container is removed immediately after each subdirectory.\n\n")
-    } else {
+    } else if (!condor_mode) {
       cat("  => Linux/macOS: volume mount approach (docker run --rm) with optional docker socket mount.\n\n")
     }
   }
   
   # ------------------------------------------------------------------
-  # 6) Execute
+  # 8) Execute
   # ------------------------------------------------------------------
   results <- run_commands()
   return(results)
