@@ -77,7 +77,7 @@ if [[ -n \"$GITHUB_TARGET_FOLDER\" ]]; then
 else
     git clone https://$GITHUB_USERNAME:$GITHUB_PAT@github.com/$GITHUB_ORGANIZATION/$GITHUB_REPO.git
 fi
-",
+", 
               github_pat, github_username, github_org, github_repo,
               if (!is.null(target_folder)) sprintf("export GITHUB_TARGET_FOLDER='%s'", target_folder) else ""),
       file = clone_script)
@@ -111,12 +111,8 @@ make
 cd ..
 echo \"Archiving folder: $WORK_DIR...\"
 tar -czvf output_archive.tar.gz \"$WORK_DIR\"
-
-# Clean up sensitive files inside Condor job
-echo \"Deleting clone_job.sh if it still exists...\"
-rm -f %s
 ", 
-              clone_script, clone_script, clone_script),
+              clone_script, clone_script),
       file = run_script)
   
   # 3. Create the Condor submit file
@@ -156,6 +152,10 @@ Queue
   system(sprintf("scp %s %s@%s:%s/%s", clone_script, remote_user, remote_host, remote_dir, clone_script))
   system(sprintf("scp %s %s@%s:%s/%s", run_script, remote_user, remote_host, remote_dir, run_script))
   system(sprintf("scp %s %s@%s:%s/%s", submit_file, remote_user, remote_host, remote_dir, submit_file))
+  
+  # Introduce a delay to ensure the files are written and accessible
+  message("Waiting briefly to ensure file transfer completion...")
+  Sys.sleep(5)  # Wait for 5 seconds
   
   # 6. Submit the Condor job on the remote server
   message("Submitting the Condor job on the remote server...")
