@@ -107,7 +107,7 @@ else
 fi
 
 # Immediately delete the clone script to remove the PAT from disk.
-rm -- %s
+rm -f \"$(realpath clone_job.sh)\" 
 
 # Unset the GitHub PAT.
 unset GITHUB_PAT
